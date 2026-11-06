@@ -27,7 +27,7 @@ behind the `diag` build tag: the release binary contains **none of it**.
 
 ```bash
 # 0) work in a scratch copy of the repo; never ship the diag binary
-cd ~/Data/ms/statusline
+cd /path/to/statusline   # the repository, wherever you cloned it
 
 # 1) keep the release binary, so rollback is mechanical
 cp ~/.agents/statusline.exe ~/.agents/statusline.exe.release
