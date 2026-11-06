@@ -1,0 +1,2 @@
+…project 16.7K(8%) | In:15.5K Out:1.2K Cache:2.0K CacheWrite:5.0K $0.42 1h0m
+[0m                                         23%/41% | Opus 200.0K high | v2.1.0

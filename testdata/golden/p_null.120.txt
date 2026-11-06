@@ -1,0 +1,2 @@
+[1GC:/fixture/project[69C1.5K(0%) | In:1.0K Out:0.5K | s1
+[1G[90CKimi-K3 1.0M think | v2.140.0

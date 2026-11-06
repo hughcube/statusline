@@ -1,0 +1,2 @@
+C:/fixture/project                          40.1K(4%) | In:32.8K Out:7.3K Cache:25.0K | Antigravity CLI 图片我怎么复制给
+[0m                                                Pro | P·32%/15% | G·36%/10% | Gemini 3.7 Flash 1.0M high think | v1.1.17

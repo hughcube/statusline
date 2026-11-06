@@ -1,0 +1,79 @@
+package agent
+
+import "testing"
+
+func TestCalcUsed(t *testing.T) {
+	cases := []struct {
+		in   float64
+		ok   bool
+		want int
+	}{
+		{1, true, 0},
+		{0, true, 100},
+		{0.68, true, 32},
+		{0.681448, true, 32},
+		{0.9795087, true, 3},
+		{0.99923146, true, 1},
+		{0.4811144, true, 52},
+		{0.5, true, 50},
+		{0, false, -1},
+	}
+	for _, c := range cases {
+		if got := CalcUsed(c.in, c.ok); got != c.want {
+			t.Errorf("CalcUsed(%v,%v) = %d, want %d", c.in, c.ok, got, c.want)
+		}
+	}
+}
+
+func TestDetectAndParseCodeBuddy(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Status","session_id":"s1","workspace":{"current_dir":"c:/a"},
+	"model":{"display_name":"M"},"version":"1","context_window":{"context_window_size":1000,
+	"current_usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":7},
+	"used_percentage":59.4}}`)
+	p := Parse(raw)
+	a := Detect(p)
+	if a.Name() != "codebuddy" {
+		t.Fatalf("detect = %s", a.Name())
+	}
+	f := a.Parse(p)
+	if f.InTokens != 10 || f.OutTokens != 5 || f.CacheRead != 7 {
+		t.Errorf("token 提取错误: %+v", f)
+	}
+	if f.UsedPct == nil || *f.UsedPct != 59.4 {
+		t.Errorf("used_percentage 未取到")
+	}
+}
+
+func TestParseAntigravityQuotas(t *testing.T) {
+	raw := []byte(`{"product":"antigravity","model":{"display_name":"G"},"version":"1","plan_tier":"Google AI Pro",
+	"quota":{"3p-5h":{"remaining_fraction":0.68},"3p-weekly":{"remaining_fraction":0.85},
+	"gemini-5h":{"remaining_fraction":0.64},"gemini-weekly":{"remaining_fraction":0.9},
+	"gemini-argon-5h":{"remaining_fraction":0.8},"gemini-argon-wtu-weekly":{"remaining_fraction":0.5}}}`)
+	p := Parse(raw)
+	f := Antigravity{}.Parse(p)
+	if len(f.Quotas) != 3 {
+		t.Fatalf("配额组数 = %d, want 3 (%+v)", len(f.Quotas), f.Quotas)
+	}
+	if f.Quotas[0].Used5 != 32 || f.Quotas[0].Used7 != 15 {
+		t.Errorf("P 组错误: %+v", f.Quotas[0])
+	}
+	if f.Quotas[1].Used5 != 36 || f.Quotas[1].Used7 != 10 {
+		t.Errorf("G 组错误: %+v", f.Quotas[1])
+	}
+	if f.Quotas[2].Label != "G4" || f.Quotas[2].Used5 != 20 || f.Quotas[2].Used7 != 50 {
+		t.Errorf("G4 组错误: %+v", f.Quotas[2])
+	}
+}
+
+func TestParseClaudeRateLimits(t *testing.T) {
+	raw := []byte(`{"workspace":{"current_dir":"/x"},"model":{"display_name":"Opus"},"version":"2.1.0",
+	"rate_limits":{"five_hour":{"used_percentage":23.5},"seven_day":{"used_percentage":41.2}}}`)
+	p := Parse(raw)
+	if Detect(p).Name() != "claude" {
+		t.Fatalf("detect = %s", Detect(p).Name())
+	}
+	f := Claude{}.Parse(p)
+	if len(f.Quotas) != 1 || f.Quotas[0].Used5 != 23 || f.Quotas[0].Used7 != 41 {
+		t.Errorf("rate_limits 解析错误: %+v", f.Quotas)
+	}
+}

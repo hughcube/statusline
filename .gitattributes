@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Golden files are compared byte-for-byte: never rewrite their line endings.
+testdata/** -text
+*.exe binary
+*.png binary

@@ -1,0 +1,2 @@
+[1GC:/fixture/project[106C0.0K(0%) | In:0.0K Out:0.0K | s1
+[1G[117Cdeepseek-v4-flash 1.0M think | v2.142.0

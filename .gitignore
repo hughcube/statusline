@@ -1,0 +1,5 @@
+statusline
+statusline.exe
+dist/
+*.test
+.DS_Store
