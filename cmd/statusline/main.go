@@ -16,8 +16,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/hughcube/statusline/internal/app"
+	dbg "github.com/hughcube/statusline/internal/debug"
 	"github.com/hughcube/statusline/internal/gitstats"
 )
 
@@ -34,6 +36,8 @@ func main() {
 		os.Exit(runBar(os.Args[2:]))
 	case "title":
 		os.Exit(runTitle(os.Args[2:]))
+	case "debug":
+		os.Exit(runDebug(os.Args[2:]))
 	case "__gitcache":
 		if len(os.Args) < 4 {
 			os.Exit(2)
@@ -69,9 +73,13 @@ func runBar(args []string) int {
 		return 2
 	}
 	raw, _ := io.ReadAll(os.Stdin)
+	start := time.Now()
 	res := app.Bar(raw, *name, *width)
 	if *debug {
 		dumpDebug(res.Agent, res.ProbeW, string(res.WidthFrom), res.Fields, res.Git)
+	}
+	if dir, ok := dbg.Dir(); ok {
+		dbg.Capture(dir, "bar", res.Agent, res.ProbeW, string(res.WidthFrom), time.Since(start), raw, res.Output, res.Git)
 	}
 	fmt.Println(res.Output)
 	return 0
@@ -85,9 +93,13 @@ func runTitle(args []string) int {
 		return 2
 	}
 	raw, _ := io.ReadAll(os.Stdin)
-	out, fields := app.Title(raw, *name)
+	start := time.Now()
+	out, resolved, fields := app.Title(raw, *name)
 	if *debug {
 		dumpDebug(*name, 0, "", fields, nil)
+	}
+	if dir, ok := dbg.Dir(); ok {
+		dbg.Capture(dir, "title", resolved, 0, "", time.Since(start), raw, out, nil)
 	}
 	fmt.Println(out)
 	return 0
@@ -102,4 +114,35 @@ func dumpDebug(agentName string, probeW int, src string, f any, g any) {
 		"git":       g,
 	}, "", "  ")
 	fmt.Fprintln(os.Stderr, string(b))
+}
+
+// runDebug implements the capture channel helpers.
+//
+//	statusline debug path          print the capture directory
+//	statusline debug show          pretty-print the latest record
+func runDebug(args []string) int {
+	dir, ok := dbg.Dir()
+	if !ok {
+		fmt.Fprintln(os.Stderr, "STATUSLINE_DEBUG_DIR is not set")
+		return 2
+	}
+	sub := "show"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "path":
+		fmt.Println(dir)
+	case "show":
+		b, err := os.ReadFile(dir + "/latest.json")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "no capture yet:", err)
+			return 1
+		}
+		fmt.Println(string(b))
+	default:
+		fmt.Fprintln(os.Stderr, "usage: statusline debug [path|show]")
+		return 2
+	}
+	return 0
 }

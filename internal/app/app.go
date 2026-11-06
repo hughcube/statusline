@@ -53,8 +53,9 @@ func Bar(raw []byte, agentName string, widthOverride int) BarResult {
 	}
 }
 
-// Title renders the terminal title and returns the normalized fields.
-func Title(raw []byte, agentName string) (string, *agent.Fields) {
+// Title renders the terminal title, returning the output, the resolved agent
+// name and the normalized fields.
+func Title(raw []byte, agentName string) (string, string, *agent.Fields) {
 	p := agent.Parse(raw)
 	a := agent.Resolve(agentName, p)
 	f := a.Parse(p)
@@ -65,7 +66,7 @@ func Title(raw []byte, agentName string) (string, *agent.Fields) {
 		f.TranscriptPath = p.Str("transcript_path")
 	}
 	f.IsError = HasError(p)
-	return title.Render(f), f
+	return title.Render(f), a.Name(), f
 }
 
 // jsonWidth reads the terminal width reported in the payload.
