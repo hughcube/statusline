@@ -102,9 +102,14 @@ Claude Code:
 The status bar never probes the terminal. Width is resolved in this order:
 
 1. `STATUSLINE_WIDTH_FILE` — a live file refreshed by the launcher (follows resizes)
-2. `terminal_width` / `columns` in the payload (Antigravity)
-3. `STATUSLINE_WIDTH` — launcher snapshot
-4. `120` — fallback
+2. `terminal_width` / `columns` in the payload (Antigravity reports it every frame)
+3. `STATUSLINE_WIDTH` — launcher snapshot (an explicit `--width` wins over it)
+4. `COLUMNS` — set by the host on every run; Claude Code derives it from the TUI,
+   because its payload carries no terminal width
+5. `120` — fallback
+
+The winning source is reported as `width_src` in a diagnostic build: `live`,
+`json`, `env`, `columns` or `const`.
 
 Container widths: codebuddy `W-1`, antigravity `W`, others `W-4`.
 

@@ -100,8 +100,13 @@ Claude Code：
 
 1. `STATUSLINE_WIDTH_FILE` —— 包装层每秒刷新的实时文件（resize 自动跟随）
 2. payload 里的 `terminal_width` / `columns`（Antigravity 每帧上报）
-3. `STATUSLINE_WIDTH` —— 包装层启动快照
-4. `120` —— 兜底常量
+3. `STATUSLINE_WIDTH` —— 包装层启动快照（显式 `--width` 优先于它）
+4. `COLUMNS` —— 宿主每次运行时注入；Claude Code 用 TUI 当前宽度设置它，
+   因为它的 payload 不带终端宽度
+5. `120` —— 兜底常量
+
+诊断构建里 `width_src` 会标明实际生效的那一级：`live` / `json` / `env` /
+`columns` / `const`。
 
 容器宽度：codebuddy `W-1`，antigravity `W`，其余 `W-4`。
 
