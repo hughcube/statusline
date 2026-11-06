@@ -86,10 +86,14 @@ Width therefore comes from outside, in this order:
    (this is what makes resize tracking work, ~0.1 ms per frame to read)
 2. `terminal_width` / `columns` in the payload (Antigravity reports it every frame)
 3. `STATUSLINE_WIDTH` - launcher snapshot
-4. `120` - constant
+4. `COLUMNS` - injected by the host on every run (Claude Code sets it from the
+   TUI's current stdout width; its payload carries no terminal_width)
+5. `120` - constant
 
-If `width_src` is `const` or `env` in a captured frame, the launcher is not
-injecting the live file; that is a launcher problem, not a renderer problem.
+`width_src` in a captured frame names the winner: `live`, `json`, `env`,
+`columns`, or `const`. If it is `const` for a CLI that does report a width,
+that is a wiring problem, not a renderer problem. If it is `const` while
+`COLUMNS` is set, the renderer is too old to know about that source.
 
 
 ## Launcher contract (codebuddy.py / equivalent wrapper)
