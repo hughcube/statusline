@@ -113,13 +113,15 @@ the terminal measures columns, and CJK characters are 2 columns but 3 bytes.
 
 ## Performance
 
-Measured on Windows 11 with an antivirus product active, payload in, two lines out:
+Measured on Windows 11, 15 runs, payload in, two lines out (antivirus disabled; with a
+security product active, a freshly downloaded binary is scanned on every launch until
+it is whitelisted, which can add a few hundred milliseconds):
 
 | Implementation | Startup | Binary |
 | :--- | ---: | ---: |
-| `statusline` (Go) | **70 ms** | **2.7 MB** |
-| legacy Bash script | 74 ms | — |
-| legacy Perl script | 109 ms | — |
+| `statusline` (Go) | **46 ms** | **2.7 MB** |
+| legacy Bash script | 55 ms | — |
+| legacy Perl script | 87 ms | — |
 
 The floor is process creation, not parsing: the whole render is a few
 milliseconds, the rest is the host spawning a new process per frame.
