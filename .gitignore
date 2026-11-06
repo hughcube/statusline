@@ -1,6 +1,5 @@
+*.exe
 /statusline
-/statusline.exe
-/diag.exe
 /dist/
 *.test
 .DS_Store
