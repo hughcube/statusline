@@ -22,9 +22,6 @@ var registry = []Agent{
 	Generic{},
 }
 
-// All returns the registered agents (used by --list-agents).
-func All() []Agent { return registry }
-
 // ByName looks an agent up by name; nil when unknown.
 func ByName(name string) Agent {
 	for _, a := range registry {

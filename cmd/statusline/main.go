@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/hughcube/statusline/internal/agent"
 	"github.com/hughcube/statusline/internal/app"
 	"github.com/hughcube/statusline/internal/diag"
 	"github.com/hughcube/statusline/internal/gitstats"
@@ -92,6 +93,7 @@ func runBar(args []string) int {
 	diag.Capture(diag.Info{
 		Kind:       "bar",
 		Agent:      res.Agent,
+		Session:    sessionOf(res.Fields),
 		Width:      res.ProbeW,
 		WidthSrc:   string(res.WidthFrom),
 		DurationMS: time.Since(start).Milliseconds(),
@@ -119,6 +121,7 @@ func runTitle(args []string) int {
 	diag.Capture(diag.Info{
 		Kind:       "title",
 		Agent:      resolved,
+		Session:    sessionOf(fields),
 		DurationMS: time.Since(start).Milliseconds(),
 		Payload:    raw,
 		Output:     out,
@@ -136,4 +139,16 @@ func dumpDebug(agentName string, probeW int, src string, f any, g any) {
 		"git":       g,
 	}, "", "  ")
 	fmt.Fprintln(os.Stderr, string(b))
+}
+
+// sessionOf picks the most specific session identifier available, so captured
+// frames from different windows never overwrite each other.
+func sessionOf(f *agent.Fields) string {
+	if f == nil {
+		return ""
+	}
+	if f.SessionID != "" {
+		return f.SessionID
+	}
+	return f.Session
 }

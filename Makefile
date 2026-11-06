@@ -8,7 +8,7 @@ endif
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test vet fmt clean cross
+.PHONY: all build test vet fmt clean cross diag
 
 all: vet test build
 
@@ -16,6 +16,11 @@ all: vet test build
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/statusline
 	@echo "built $(BIN) $(VERSION)"
+
+## diag: diagnostic binary that captures every frame (see AGENTS.md)
+diag:
+	go build -tags diag -o statusline-diag ./cmd/statusline
+	@echo "built statusline-diag (captures to ~/.cache/statusline/diag)"
 
 ## test: unit + golden + contract tests
 test:

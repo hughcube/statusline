@@ -41,8 +41,10 @@ cp statusline.exe ~/.agents/statusline.exe
 # 3) let the host render a few frames (2-5 seconds of normal use is enough)
 
 # 4) read what actually happened
-cat ~/.cache/statusline/diag/latest.json
-ls ~/.cache/statusline/diag/frames/     # ring of the last 50 frames
+cat ~/.cache/statusline/diag/latest.json            # last frame, any agent
+ls ~/.cache/statusline/diag/                        # one directory per agent+session
+cat ~/.cache/statusline/diag/codebuddy-<sid8>/latest.json
+ls ~/.cache/statusline/diag/codebuddy-<sid8>/frames/ # ring of the last 50 frames
 
 # 5) fix the code, rebuild the release binary, restore, verify
 go build -trimpath -ldflags "-s -w -X main.version=$(git describe --tags --always)" -o statusline.exe ./cmd/statusline
@@ -96,13 +98,43 @@ The width file is produced outside this repository, so the two sides must agree:
 
 | Side | Responsibility |
 | :--- | :--- |
-| launcher | writes @@width.<pid>.live@@ atomically **only when the column count changes** (no heartbeat, no periodic writes); injects @@STATUSLINE_WIDTH@@ and @@STATUSLINE_WIDTH_FILE@@ into the CLI environment |
-| binary | reads @@STATUSLINE_WIDTH_FILE@@ once per frame (~0.1 ms), strips CR, falls back to the payload, then to @@STATUSLINE_WIDTH@@ |
+| launcher | writes `width.<pid>.live` atomically **only when the column count changes** (no heartbeat, no periodic writes); injects `STATUSLINE_WIDTH` and `STATUSLINE_WIDTH_FILE` into the CLI environment |
+| binary | reads `STATUSLINE_WIDTH_FILE` once per frame (~0.1 ms), strips CR, falls back to the payload, then to `STATUSLINE_WIDTH` |
 
-On startup the launcher prunes its own @@width.*.live@@ files that are both older than
+On startup the launcher prunes its own `width.*.live` files that are both older than
 7 days and whose PID is no longer running. It never touches other files in the
 cache directory. A missing live file therefore means the launcher died, not that
 the renderer failed.
+## Capture layout
+
+Every frame lands in a directory named after the agent and the first eight
+characters of the session id, so several CLIs (and several windows of the same
+CLI) never overwrite each other:
+
+```
+<cache>/statusline/diag/latest.json                     <- last frame overall
+<cache>/statusline/diag/<agent>-<sid8>/latest.json      <- last frame of that session
+<cache>/statusline/diag/<agent>-<sid8>/frames/NNNNN.json
+```
+
+When the payload carries no session id the shard falls back to the process id.
+Only `-tags diag` builds write anything; the release binary contains no capture
+code at all.
+
+## Testing and re-baselining
+
+```bash
+go test ./...                                    # unit + golden + contract
+go test -tags diag ./internal/diag/              # capture channel
+STATUSLINE_LEGACY=/path/to/statusline.sh \
+  go test ./tests -run TestParityWithLegacy      # byte parity vs legacy shell
+go test ./tests -run TestGoldenBars -args -update  # re-baseline (read the warning)
+```
+
+`testdata/golden` is the independent oracle: it was produced by the legacy
+implementation. Only run `-update` after `TestParityWithLegacy` still passes,
+otherwise the goldens degrade into "matches the current code".
+
 ## Symptom -> first action
 
 | Symptom | First action |

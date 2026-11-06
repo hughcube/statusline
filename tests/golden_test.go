@@ -6,6 +6,7 @@
 package tests
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,13 @@ func setupEnv(t *testing.T) {
 	t.Setenv("STATUSLINE_TESTING", "1")
 	t.Setenv("AI_CACHE_HOME", t.TempDir())
 }
+
+// update rewrites the goldens from the current renderer.
+//
+// Only use it after confirming the renderer still matches the legacy shell
+// implementation (see TestParityWithLegacy), otherwise the goldens stop being
+// an independent oracle.
+var update = flag.Bool("update", false, "rewrite golden files from the current renderer")
 
 func TestGoldenBars(t *testing.T) {
 	setupEnv(t)

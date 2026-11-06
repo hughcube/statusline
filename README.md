@@ -119,7 +119,7 @@ it is whitelisted, which can add a few hundred milliseconds):
 
 | Implementation | Startup | Binary |
 | :--- | ---: | ---: |
-| `statusline` (Go) | **46 ms** | **2.7 MB** |
+| `statusline` (Go) | **46 ms** | **2.5 MB** |
 | legacy Bash script | 55 ms | — |
 | legacy Perl script | 87 ms | — |
 

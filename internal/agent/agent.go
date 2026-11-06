@@ -178,6 +178,11 @@ func CalcUsed(remaining float64, ok bool) int {
 		return 100
 	}
 	s := strconv.FormatFloat(remaining, 'f', 6, 64) // e.g. "0.680000"
+	if s == "1.000000" {
+		// 0.9999995..1 rounds up while formatting; the shell took the first two
+		// decimals ("99") and reported 1%, so keep that behaviour.
+		return 1
+	}
 	if len(s) < 4 || s[0] != '0' || s[1] != '.' {
 		return -1
 	}

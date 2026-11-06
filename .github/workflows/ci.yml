@@ -21,6 +21,10 @@ jobs:
           go-version: '1.21'
       - name: go vet
         run: go vet ./...
+      - name: go vet (diag build)
+        run: go vet -tags diag ./...
+      - name: build diag binary
+        run: go build -tags diag -o statusline-diag ./cmd/statusline
       - name: go test
         run: go test ./...
       - name: build

@@ -9,6 +9,7 @@ import (
 
 	"github.com/hughcube/statusline/internal/agent"
 	"github.com/hughcube/statusline/internal/gitstats"
+	"github.com/hughcube/statusline/internal/pathx"
 	"github.com/hughcube/statusline/internal/render"
 	"github.com/hughcube/statusline/internal/title"
 	"github.com/hughcube/statusline/internal/widthsource"
@@ -99,7 +100,7 @@ func CacheDir() string {
 		if home == "" {
 			home = os.Getenv("USERPROFILE")
 		}
-		root = filepath.Join(home, ".cache")
+		root = filepath.Join(pathx.Native(home), ".cache")
 	}
 	dir := filepath.Join(root, "statusline")
 	_ = os.MkdirAll(dir, 0o755)

@@ -38,11 +38,19 @@ func Resolve(jsonWidth int64, envWidth string) (int, Source) {
 	if jsonWidth > 20 {
 		return int(jsonWidth), SourceJSON
 	}
+	explicit := envWidth
 	if envWidth == "" {
 		envWidth = os.Getenv("STATUSLINE_WIDTH")
 	}
 	if v, ok := fromEnv(envWidth); ok {
 		return v, SourceEnv
+	}
+	// An unusable explicit override (e.g. a bad --width) falls back to the
+	// launcher snapshot instead of jumping straight to the constant.
+	if explicit != "" {
+		if v, ok := fromEnv(os.Getenv("STATUSLINE_WIDTH")); ok {
+			return v, SourceEnv
+		}
 	}
 	return Default, SourceConst
 }

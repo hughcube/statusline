@@ -26,6 +26,10 @@ import (
 // runs in the background.
 const TTL = 25 * time.Second
 
+// lockTTL bounds how long a refresh may hold the lock before another frame may
+// steal it.
+const lockTTL = 10 * time.Second
+
 // Stats is the repository state shown in the status line.
 type Stats struct {
 	Branch string
@@ -91,7 +95,11 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 		writeCache(path, st)
 		return st
 	}
-	refreshAsync(path, native)
+	// Only one frame may own the refresh: without this, a stale cache at 3-5 fps
+	// spawns a git process per frame until the worker writes the result.
+	if acquireLock(path) {
+		refreshAsync(path, native)
+	}
 	return st
 }
 
@@ -145,7 +153,26 @@ func refreshAsync(path, root string) {
 
 // CacheWorker is the entry point of the internal __gitcache subcommand.
 func CacheWorker(root, cachePath string) {
+	defer releaseLock(cachePath)
 	writeCache(cachePath, Fetch(root))
+}
+
+// acquireLock claims the refresh slot for one repository. The lock is a
+// directory so creation is atomic; a stale lock (crashed worker) is stolen
+// after lockTTL.
+func acquireLock(path string) bool {
+	lock := path + ".lock"
+	if fi, err := os.Stat(lock); err == nil {
+		if time.Since(fi.ModTime()) < lockTTL {
+			return false
+		}
+		_ = os.RemoveAll(lock)
+	}
+	return os.Mkdir(lock, 0o755) == nil
+}
+
+func releaseLock(path string) {
+	_ = os.RemoveAll(path + ".lock")
 }
 
 // Fetch runs git and parses branch, dirty count, ahead/behind and line changes.

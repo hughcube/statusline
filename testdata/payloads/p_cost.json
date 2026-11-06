@@ -1,0 +1,1 @@
+{"hook_event_name":"Status","session_id":"cost-small","workspace":{"current_dir":"C:/fixture/project"},"model":{"display_name":"Opus"},"version":"2.1.0","context_window":{"total_input_tokens":100,"total_output_tokens":10,"context_window_size":200000},"cost":{"total_cost_usd":0.001}}

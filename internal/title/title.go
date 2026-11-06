@@ -7,6 +7,7 @@
 package title
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,11 +28,7 @@ const negativeTTL = 5 * time.Second
 // CacheDir returns the title cache directory, kept identical to the legacy
 // implementation so upgrades are seamless.
 func CacheDir() string {
-	home := os.Getenv("HOME")
-	if home == "" {
-		home = os.Getenv("USERPROFILE")
-	}
-	return filepath.Join(home, ".gemini", ".statusline-cache")
+	return filepath.Join(render.HomeDir(), ".gemini", ".statusline-cache")
 }
 
 // Render builds the title text.
@@ -128,12 +125,8 @@ func fromTranscript(f *agent.Fields) string {
 
 	path := f.TranscriptPath
 	if path == "" {
-		home := os.Getenv("HOME")
-		if home == "" {
-			home = os.Getenv("USERPROFILE")
-		}
-		path = filepath.Join(home, ".gemini", "antigravity-cli", "brain", f.SessionID,
-			".system_generated", "logs", "transcript.jsonl")
+		path = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli", "brain",
+			f.SessionID, ".system_generated", "logs", "transcript.jsonl")
 	}
 	if _, err := os.Stat(path); err != nil {
 		return ""
@@ -152,29 +145,48 @@ func fromTranscript(f *agent.Fields) string {
 
 // scanTranscript looks at the first 30 lines for a USER_INPUT entry carrying a
 // <USER_REQUEST> block.
+//
+// The file is streamed: real transcripts grow to tens of megabytes and this
+// runs on every render, so loading it whole would dominate the frame cost.
 func scanTranscript(path string) string {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
-	lines := strings.Split(string(b), "\n")
-	if len(lines) > 30 {
-		lines = lines[:30]
-	}
-	for _, line := range lines {
-		if !strings.Contains(line, "\"type\":\"USER_INPUT\"") || !strings.Contains(line, "<USER_REQUEST>") {
-			continue
+	defer f.Close()
+
+	const maxLines = 30
+	const maxLineBytes = 2 << 20
+	reader := bufio.NewReaderSize(f, 64<<10)
+
+	for n := 0; n < maxLines; n++ {
+		line, readErr := reader.ReadString('\n')
+		if len(line) > maxLineBytes {
+			line = line[:maxLineBytes]
 		}
-		start := strings.Index(line, "<USER_REQUEST>") + len("<USER_REQUEST>")
-		rest := line[start:]
-		if end := strings.Index(rest, "</USER_REQUEST>"); end >= 0 {
-			rest = rest[:end]
+		if title := matchRequestLine(line); title != "" {
+			return title
 		}
-		text := clean(rest)
-		if text == "" {
-			continue
+		if readErr != nil {
+			break
 		}
-		return render.TruncHead(text, MaxTitleCols)
 	}
 	return ""
+}
+
+// matchRequestLine extracts the <USER_REQUEST> body from one transcript line.
+func matchRequestLine(line string) string {
+	if !strings.Contains(line, "\"type\":\"USER_INPUT\"") || !strings.Contains(line, "<USER_REQUEST>") {
+		return ""
+	}
+	start := strings.Index(line, "<USER_REQUEST>") + len("<USER_REQUEST>")
+	rest := line[start:]
+	if end := strings.Index(rest, "</USER_REQUEST>"); end >= 0 {
+		rest = rest[:end]
+	}
+	text := clean(rest)
+	if text == "" {
+		return ""
+	}
+	return render.TruncHead(text, MaxTitleCols)
 }

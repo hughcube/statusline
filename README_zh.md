@@ -114,7 +114,7 @@ Windows 11 实测，15 次取样，有 payload 输入、输出两行（杀软已
 
 | 实现 | 启动耗时 | 体积 |
 | :--- | ---: | ---: |
-| `statusline`（Go） | **46 ms** | **2.7 MB** |
+| `statusline`（Go） | **46 ms** | **2.5 MB** |
 | 旧 Bash 脚本 | 55 ms | — |
 | 旧 Perl 脚本 | 87 ms | — |
 

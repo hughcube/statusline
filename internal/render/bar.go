@@ -148,7 +148,11 @@ func perfSeg(f *agent.Fields) string {
 		parts[0] += " CacheWrite:" + FmtTokens(f.CacheCreate)
 	}
 	if f.CostUSD > 0 {
-		parts = append(parts, fmt.Sprintf("$%.2f", f.CostUSD))
+		// Format first, then drop the value: a sub-cent cost must not render as
+		// "$0.00" (the legacy implementation did the same check after formatting).
+		if cn := fmt.Sprintf("%.2f", f.CostUSD); cn != "0.00" {
+			parts = append(parts, "$"+cn)
+		}
 	}
 	if f.DurMS > 0 {
 		parts = append(parts, FmtDuration(f.DurMS))
