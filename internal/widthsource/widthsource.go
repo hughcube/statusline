@@ -1,11 +1,12 @@
 // Package widthsource decides how many columns this frame may use.
 //
-// Lookup order (identical to the legacy implementation; it never probes the
-// terminal and never caches anything):
+// Lookup order (it never probes the terminal and never caches anything):
 //  1. STATUSLINE_WIDTH_FILE - the live width.<pid>.live file refreshed by the launcher
 //  2. terminal_width / columns from the stdin JSON - reported by Antigravity
 //  3. STATUSLINE_WIDTH - launcher snapshot
-//  4. 120 - degenerate constant
+//  4. COLUMNS - injected by the host on every run (Claude Code reports the
+//     TUI's current stdout width this way)
+//  5. 120 - degenerate constant
 package widthsource
 
 import (
@@ -21,10 +22,11 @@ const Default = 120
 type Source string
 
 const (
-	SourceFile  Source = "live"
-	SourceJSON  Source = "json"
-	SourceEnv   Source = "env"
-	SourceConst Source = "const"
+	SourceFile    Source = "live"
+	SourceJSON    Source = "json"
+	SourceEnv     Source = "env"
+	SourceColumns Source = "columns"
+	SourceConst   Source = "const"
 )
 
 // Resolve returns the column count for this frame and its origin.
@@ -51,6 +53,12 @@ func Resolve(jsonWidth int64, envWidth string) (int, Source) {
 		if v, ok := fromEnv(os.Getenv("STATUSLINE_WIDTH")); ok {
 			return v, SourceEnv
 		}
+	}
+	// Claude Code runs the status line with COLUMNS set to the TUI's current
+	// stdout width, which is the only width signal that CLI offers (its payload
+	// carries no terminal_width). Re-read every frame so resize is followed.
+	if v, ok := fromEnv(os.Getenv("COLUMNS")); ok {
+		return v, SourceColumns
 	}
 	return Default, SourceConst
 }

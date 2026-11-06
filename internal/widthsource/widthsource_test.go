@@ -7,6 +7,7 @@ import (
 )
 
 func TestResolveOrder(t *testing.T) {
+	t.Setenv("COLUMNS", "")
 	dir := t.TempDir()
 	live := filepath.Join(dir, "width.live")
 	os.WriteFile(live, []byte("150\r\n"), 0o644) // CRLF on purpose
@@ -37,9 +38,24 @@ func TestResolveOrder(t *testing.T) {
 }
 
 func TestResolveExplicitEnvWins(t *testing.T) {
+	t.Setenv("COLUMNS", "")
 	t.Setenv("STATUSLINE_WIDTH_FILE", "")
 	t.Setenv("STATUSLINE_WIDTH", "130")
 	if w, src := Resolve(0, "120"); w != 120 || src != SourceEnv {
 		t.Errorf("explicit width must override STATUSLINE_WIDTH: got %d/%s", w, src)
+	}
+}
+
+func TestResolveColumns(t *testing.T) {
+	t.Setenv("STATUSLINE_WIDTH_FILE", "")
+	t.Setenv("STATUSLINE_WIDTH", "")
+	t.Setenv("COLUMNS", "160")
+	if w, src := Resolve(0, ""); w != 160 || src != SourceColumns {
+		t.Errorf("COLUMNS must drive the width when no launcher signal exists: got %d/%s", w, src)
+	}
+
+	t.Setenv("STATUSLINE_WIDTH", "130")
+	if w, src := Resolve(0, ""); w != 130 || src != SourceEnv {
+		t.Errorf("STATUSLINE_WIDTH must still beat COLUMNS: got %d/%s", w, src)
 	}
 }

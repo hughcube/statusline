@@ -74,7 +74,8 @@ func Title(raw []byte, agentName string) (string, string, *agent.Fields) {
 //
 // Antigravity reports terminal_width on every frame; when it is missing the
 // historical behaviour is to fall back to 120, which also wins over
-// STATUSLINE_WIDTH because that CLI can always measure itself.
+// STATUSLINE_WIDTH because that CLI can always measure itself. Other agents
+// leave this at 0 so widthsource can fall through to COLUMNS or the launcher.
 func jsonWidth(p *agent.Payload, name string) int64 {
 	w := int64(0)
 	if v, ok := p.Get("terminal_width").(float64); ok {
