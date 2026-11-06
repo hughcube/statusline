@@ -87,13 +87,14 @@ func runBar(args []string) int {
 	fs := flag.NewFlagSet("bar", flag.ContinueOnError)
 	name := fs.String("agent", "auto", "agent name or auto")
 	width := fs.Int("width", 0, "override the terminal width (debugging)")
+	mcp := fs.Bool("mcp", false, "show the number of enabled MCP servers")
 	verbose := fs.Bool("debug", false, "dump the parsed payload to stderr")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	raw, _ := io.ReadAll(os.Stdin)
 	start := time.Now()
-	res := app.Bar(raw, *name, *width)
+	res := app.BarWith(raw, *name, *width, *mcp)
 	if *verbose {
 		dumpDebug(res.Agent, res.ProbeW, string(res.WidthFrom), res.Fields, res.Git, res.Billing)
 	}

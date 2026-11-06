@@ -53,6 +53,10 @@ type Fields struct {
 	Email    string
 	Quotas   []Quota
 
+	// MCPEnabled is the number of MCP servers this directory has turned on.
+	// 0 hides the segment, so CLIs without MCP configuration never show it.
+	MCPEnabled int
+
 	// Title specific
 	State          string
 	TranscriptPath string

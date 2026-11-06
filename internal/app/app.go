@@ -10,6 +10,7 @@ import (
 	"github.com/hughcube/statusline/internal/agent"
 	"github.com/hughcube/statusline/internal/billing"
 	"github.com/hughcube/statusline/internal/gitstats"
+	"github.com/hughcube/statusline/internal/mcpcfg"
 	"github.com/hughcube/statusline/internal/pathx"
 	"github.com/hughcube/statusline/internal/render"
 	"github.com/hughcube/statusline/internal/title"
@@ -27,12 +28,21 @@ type BarResult struct {
 	Billing   billing.State
 }
 
-// Bar renders the two status lines. widthOverride > 20 forces a width
-// (debug and tests only).
+// Bar renders the two status lines without the MCP segment. widthOverride >
+// 20 forces a width (debug and tests only).
 func Bar(raw []byte, agentName string, widthOverride int) BarResult {
+	return BarWith(raw, agentName, widthOverride, false)
+}
+
+// BarWith renders the two status lines. mcpEnabled adds the "MCP×N" segment,
+// which has to be read from the CLI's own configuration files.
+func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) BarResult {
 	p := agent.Parse(raw)
 	a := agent.Resolve(agentName, p)
 	f := a.Parse(p)
+	if mcpEnabled {
+		f.MCPEnabled, _ = mcpcfg.Count(a.Name(), f.Dir)
+	}
 
 	envWidth := ""
 	if widthOverride > 20 {

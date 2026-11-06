@@ -261,6 +261,12 @@ func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 		parts = append(parts, q)
 	}
 
+	// MCP follows the same degradation tier as the version: it is useful
+	// context, never the last thing to survive a narrow line.
+	if f.MCPEnabled > 0 && lvl <= 2 {
+		parts = append(parts, fmt.Sprintf("MCP×%d", f.MCPEnabled))
+	}
+
 	model := ModelSeg(f)
 	if lvl >= 4 {
 		limit := wt / 2
