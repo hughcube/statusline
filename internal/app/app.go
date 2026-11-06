@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/hughcube/statusline/internal/agent"
+	"github.com/hughcube/statusline/internal/billing"
 	"github.com/hughcube/statusline/internal/gitstats"
 	"github.com/hughcube/statusline/internal/pathx"
 	"github.com/hughcube/statusline/internal/render"
@@ -23,6 +24,7 @@ type BarResult struct {
 	WidthFrom widthsource.Source
 	Fields    *agent.Fields
 	Git       render.Git
+	Billing   billing.State
 }
 
 // Bar renders the two status lines. widthOverride > 20 forces a width
@@ -44,13 +46,23 @@ func Bar(raw []byte, agentName string, widthOverride int) BarResult {
 		git = render.Git{Branch: st.Branch, Dirty: st.Dirty, Ahead: st.Ahead, Behind: st.Behind, Add: st.Add, Del: st.Del}
 	}
 
+	// The balance is a cache read only; a miss or an expired entry schedules a
+	// detached worker and this frame renders the previous value immediately.
+	var bstate billing.State
+	bill := render.Billing{}
+	if !billing.Disabled() {
+		bstate = billing.Load(CacheDir(), a.Name())
+		bill = render.Billing{Label: bstate.Label, Text: bstate.Amount, Stale: bstate.Stale}
+	}
+
 	return BarResult{
-		Output:    render.Build(f, a.Name(), probeW, git),
+		Output:    render.BuildWith(f, a.Name(), probeW, git, bill),
 		Agent:     a.Name(),
 		ProbeW:    probeW,
 		WidthFrom: src,
 		Fields:    f,
 		Git:       git,
+		Billing:   bstate,
 	}
 }
 

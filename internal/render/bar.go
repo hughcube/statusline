@@ -19,6 +19,15 @@ type Git struct {
 	Worktree string
 }
 
+// Billing is the preformatted balance segment. Label names the provider (for
+// example "DeepSeek") and is dropped at narrow widths; Stale adds a "?" so a
+// cached value that could not be refreshed does not look current.
+type Billing struct {
+	Label string
+	Text  string
+	Stale bool
+}
+
 // Style captures one CLI's container constraints.
 type Style struct {
 	// Container is the usable width (WT).
@@ -41,9 +50,14 @@ func StyleFor(client string, probeW int) Style {
 	}
 }
 
-// Build renders the two status lines. The result contains the inner newline
-// but no trailing newline.
+// Build renders the two status lines without a billing segment.
 func Build(f *agent.Fields, client string, probeW int, git Git) string {
+	return BuildWith(f, client, probeW, git, Billing{})
+}
+
+// BuildWith renders the two status lines including the billing segment. The
+// result contains the inner newline but no trailing newline.
+func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing) string {
 	f = Normalize(f, client)
 	st := StyleFor(client, probeW)
 	wt := st.Container
@@ -99,7 +113,7 @@ func Build(f *agent.Fields, client string, probeW int, git Git) string {
 		gap = 1
 	}
 
-	l2 := buildLine2(f, wt)
+	l2 := buildLine2(f, wt, bill)
 	pad := wt - SegWidth(l2)
 	if pad < 0 {
 		pad = 0
@@ -213,17 +227,17 @@ func sessionLabel(f *agent.Fields) string {
 }
 
 // buildLine2 degrades progressively: level 0 is the richest, level 4 is model only.
-func buildLine2(f *agent.Fields, wt int) string {
+func buildLine2(f *agent.Fields, wt int, bill Billing) string {
 	for lvl := 0; lvl <= 4; lvl++ {
-		line := line2At(f, lvl, wt)
+		line := line2At(f, lvl, wt, bill)
 		if SegWidth(line) <= wt {
 			return line
 		}
 	}
-	return line2At(f, 4, wt)
+	return line2At(f, 4, wt, bill)
 }
 
-func line2At(f *agent.Fields, lvl, wt int) string {
+func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 	var parts []string
 
 	acct := Account(f)
@@ -237,6 +251,10 @@ func line2At(f *agent.Fields, lvl, wt int) string {
 		}
 	case plan != "" && lvl <= 2:
 		parts = append(parts, plan)
+	}
+
+	if b := billingSeg(bill, lvl); b != "" {
+		parts = append(parts, b)
 	}
 
 	if q := quotaSeg(f.Quotas, lvl); q != "" {
@@ -258,6 +276,23 @@ func line2At(f *agent.Fields, lvl, wt int) string {
 		parts = append(parts, "v"+f.Version)
 	}
 	return strings.Join(parts, " | ")
+}
+
+// billingSeg renders the balance. The provider label is the first thing to go
+// when width is tight; the amount survives levels 0-3 and disappears with the
+// rest of the account context at level 4.
+func billingSeg(b Billing, lvl int) string {
+	if b.Text == "" || lvl > 3 {
+		return ""
+	}
+	seg := b.Text
+	if b.Stale {
+		seg += "?"
+	}
+	if lvl <= 1 && b.Label != "" {
+		seg = b.Label + " " + seg
+	}
+	return seg
 }
 
 func quotaSeg(quotas []agent.Quota, lvl int) string {

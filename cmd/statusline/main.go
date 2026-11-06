@@ -23,6 +23,7 @@ import (
 
 	"github.com/hughcube/statusline/internal/agent"
 	"github.com/hughcube/statusline/internal/app"
+	"github.com/hughcube/statusline/internal/billing"
 	"github.com/hughcube/statusline/internal/diag"
 	"github.com/hughcube/statusline/internal/gitstats"
 )
@@ -46,6 +47,12 @@ func main() {
 			os.Exit(2)
 		}
 		gitstats.CacheWorker(os.Args[2], os.Args[3])
+		return
+	case "__billingcache":
+		if len(os.Args) < 4 {
+			os.Exit(2)
+		}
+		billing.CacheWorker(os.Args[2], os.Args[3])
 		return
 	case "--version", "-v", "version":
 		fmt.Println(versionString())
@@ -88,7 +95,11 @@ func runBar(args []string) int {
 	start := time.Now()
 	res := app.Bar(raw, *name, *width)
 	if *verbose {
-		dumpDebug(res.Agent, res.ProbeW, string(res.WidthFrom), res.Fields, res.Git)
+		dumpDebug(res.Agent, res.ProbeW, string(res.WidthFrom), res.Fields, res.Git, res.Billing)
+	}
+	var billDiag any
+	if res.Billing.Provider != "" {
+		billDiag = res.Billing
 	}
 	diag.Capture(diag.Info{
 		Kind:       "bar",
@@ -100,6 +111,7 @@ func runBar(args []string) int {
 		Payload:    raw,
 		Output:     res.Output,
 		Extra:      res.Git,
+		Billing:    billDiag,
 	})
 	fmt.Println(res.Output)
 	return 0
@@ -116,7 +128,7 @@ func runTitle(args []string) int {
 	start := time.Now()
 	out, resolved, fields := app.Title(raw, *name)
 	if *verbose {
-		dumpDebug(resolved, 0, "", fields, nil)
+		dumpDebug(resolved, 0, "", fields, nil, nil)
 	}
 	diag.Capture(diag.Info{
 		Kind:       "title",
@@ -130,13 +142,14 @@ func runTitle(args []string) int {
 	return 0
 }
 
-func dumpDebug(agentName string, probeW int, src string, f any, g any) {
+func dumpDebug(agentName string, probeW int, src string, f any, g any, bill any) {
 	b, _ := json.MarshalIndent(map[string]any{
 		"agent":     agentName,
 		"probe_w":   probeW,
 		"width_src": src,
 		"fields":    f,
 		"git":       g,
+		"billing":   bill,
 	}, "", "  ")
 	fmt.Fprintln(os.Stderr, string(b))
 }

@@ -1,10 +1,21 @@
 package agent
 
+import "time"
+
 // Claude handles the Claude Code statusLine payload.
 // It has no quota object, only rate_limits with used percentages.
 type Claude struct{}
 
 func (Claude) Name() string { return "claude" }
+
+// BillingSources exposes the DeepSeek credential this Claude Code session is
+// actually using. The base URL must be the official host; a relay's token is
+// never treated as a DeepSeek key. Only the live process environment counts —
+// falling back to a settings file could show a different account than the one
+// the current session is using.
+func (Claude) BillingSources() []BillingSource {
+	return deepSeekFromAnthropicEnv("claude")
+}
 
 func (Claude) Detect(p *Payload) bool {
 	if p.Str("product") == "antigravity" {
@@ -49,15 +60,28 @@ func (Claude) Parse(p *Payload) *Fields {
 	f.CostUSD, _ = p.Float("cost", "total_cost_usd")
 	f.DurMS = p.Int("cost", "total_duration_ms")
 
-	// rate_limits carry used percentages; truncate like the shell version did.
+	// rate_limits carry used percentages and absolute reset times (Unix
+	// seconds). Truncate the percentages like the shell version did, and keep
+	// both reset timestamps so the renderer can show them at the levels where
+	// the legacy bar showed them.
+	q := Quota{Used5: -1, Used7: -1}
+	have := false
 	if v, ok := p.Float("rate_limits", "five_hour", "used_percentage"); ok {
-		f.Quotas = append(f.Quotas, Quota{Label: "", Used5: int(v), Used7: -1})
+		q.Used5 = int(v)
+		have = true
+	}
+	if sec := p.Int("rate_limits", "five_hour", "resets_at"); sec > 0 {
+		q.Reset5 = time.Unix(sec, 0)
 	}
 	if v, ok := p.Float("rate_limits", "seven_day", "used_percentage"); ok {
-		if len(f.Quotas) == 0 {
-			f.Quotas = append(f.Quotas, Quota{Label: "", Used5: -1})
-		}
-		f.Quotas[0].Used7 = int(v)
+		q.Used7 = int(v)
+		have = true
+	}
+	if sec := p.Int("rate_limits", "seven_day", "resets_at"); sec > 0 {
+		q.Reset7 = time.Unix(sec, 0)
+	}
+	if have {
+		f.Quotas = append(f.Quotas, q)
 	}
 	return f
 }

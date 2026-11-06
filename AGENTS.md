@@ -66,12 +66,15 @@ sha256sum -c ~/.agents/statusline.exe.release.sha256
   "duration_ms": 3,
   "payload": { "...": "exactly what the host sent" },
   "output": "\u001b[1G~/.agents ... (exact stdout bytes)",
-  "extra": { "Branch": "master", "Dirty": 57, "...": "git segment" }
+  "extra": { "Branch": "master", "Dirty": 57, "...": "git segment" },
+  "billing": { "Provider": "deepseek", "Label": "DeepSeek", "Amount": "¥10.26", "Stale": false }
 }
 ```
 
 Read it in this order: `width_src` -> `width` -> `payload` -> `output`.
 That answers "which width won, what did the host send, what did we print".
+`billing` is present only when a credential was discovered; it never contains
+the credential.
 
 ## Width facts (measured, not guessed)
 
@@ -109,6 +112,43 @@ On startup the launcher prunes its own `width.*.live` files that are both older 
 7 days and whose PID is no longer running. It never touches other files in the
 cache directory. A missing live file therefore means the launcher died, not that
 the renderer failed.
+
+## Billing cache (DeepSeek)
+
+Only Claude Code implements `agent.Billable` today. The balance is discovered
+only when `ANTHROPIC_BASE_URL` is the **official** host
+(`https://api.deepseek.com`); a relay token is never sent to DeepSeek.
+
+```
+<cache>/statusline/billing/deepseek-<sha256:16>.json
+<cache>/statusline/billing/deepseek-<sha256:16>.json.lock/
+<cache>/statusline/billing/deepseek-<sha256:16>.json.tmp
+```
+
+- The name is `sha256("statusline:billing:deepseek:" + key)[:16]`. No key, key
+  fragment, e-mail, or base URL appears in the path.
+- The file is a JSON envelope: `{"version":1,"fetched_at":...,"last_attempt":...,
+  "status":"ok","error":"","response":{...}}`. `response` is the **complete**
+  `/user/balance` body, so extra currencies and future fields are preserved.
+  It contains no key, request headers, or account identity.
+- A failed refresh keeps the last good `response` and only updates
+  `last_attempt`, `status`, and `error`.
+- The old `.balance` TSV format is intentionally ignored; the next refresh
+  rewrites the entry as JSON.
+- The foreground only reads the file. A stale entry spawns
+  `statusline __billingcache <agent> <path>`; the worker rediscovers the key
+  from its inherited environment (never argv), has a 3 s request timeout, and
+  writes atomically via `.tmp` + rename.
+- Defaults: 60 s TTL (`STATUSLINE_BILLING_TTL` seconds, minimum 30), 60 s error
+  backoff, `?` after 2×TTL, hidden after `max(2h, 3×TTL)`.
+- `STATUSLINE_BILLING=off` disables it; `STATUSLINE_TESTING=1` disables it in
+  tests so golden frames stay deterministic.
+- The quota segment (`23%(18:30)/41%(08 09:00)`) is separate: it comes from the
+  payload's `rate_limits`, including `resets_at`. The billing amount is inserted
+  before it.
+- The segment is `DeepSeek ¥10.26` at normal widths; the provider label is
+  dropped first when the line gets tight, leaving `¥10.26`.
+
 ## Capture layout
 
 Every frame lands in a directory named after the agent and the first eight
@@ -129,6 +169,7 @@ code at all.
 
 ```bash
 go test ./...                                    # unit + golden + contract
+go test ./internal/billing/                      # cache, TTL, worker, HTTP
 go test -tags diag ./internal/diag/              # capture channel
 STATUSLINE_LEGACY=/path/to/statusline.sh \
   go test ./tests -run TestParityWithLegacy      # byte parity vs legacy shell
@@ -145,6 +186,7 @@ otherwise the goldens degrade into "matches the current code".
 | :--- | :--- |
 | Status line missing entirely | run `echo "$PAYLOAD" \| ~/.agents/statusline bar --debug` manually; if that works, the host command is wrong |
 | Wrong width / wraps oddly | capture a frame, check `width_src` |
+| Balance missing or stale | run `bar --debug`, inspect `billing`; confirm `ANTHROPIC_BASE_URL` is the official DeepSeek host and check the `.json` cache file's `fetched_at` / `status` / `error` |
 | Bar visible but stale | check `STATUSLINE_WIDTH_FILE` mtime; a frozen file means the launcher died |
 | Garbled ANSI on a non-CodeBuddy agent | that branch must use `ESC0 + spaces`, never CSI cursor moves |
 | Only one agent broken | diff its payload against a working one in `testdata/payloads` |

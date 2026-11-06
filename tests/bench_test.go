@@ -20,6 +20,9 @@ func BenchmarkBar(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	// Billing is not part of the renderer benchmark: keep it offline even when
+	// the developer's shell has a real DeepSeek credential.
+	b.Setenv("STATUSLINE_BILLING", "off")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

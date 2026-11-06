@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCalcUsed(t *testing.T) {
 	cases := []struct {
@@ -67,7 +70,7 @@ func TestParseAntigravityQuotas(t *testing.T) {
 
 func TestParseClaudeRateLimits(t *testing.T) {
 	raw := []byte(`{"workspace":{"current_dir":"/x"},"model":{"display_name":"Opus"},"version":"2.1.0",
-	"rate_limits":{"five_hour":{"used_percentage":23.5},"seven_day":{"used_percentage":41.2}}}`)
+	"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1762473600},"seven_day":{"used_percentage":41.2,"resets_at":1762992000}}}`)
 	p := Parse(raw)
 	if Detect(p).Name() != "claude" {
 		t.Fatalf("detect = %s", Detect(p).Name())
@@ -75,5 +78,11 @@ func TestParseClaudeRateLimits(t *testing.T) {
 	f := Claude{}.Parse(p)
 	if len(f.Quotas) != 1 || f.Quotas[0].Used5 != 23 || f.Quotas[0].Used7 != 41 {
 		t.Errorf("rate_limits 解析错误: %+v", f.Quotas)
+	}
+	if !f.Quotas[0].Reset5.Equal(time.Unix(1762473600, 0)) {
+		t.Errorf("five_hour resets_at 解析错误: %v", f.Quotas[0].Reset5)
+	}
+	if !f.Quotas[0].Reset7.Equal(time.Unix(1762992000, 0)) {
+		t.Errorf("seven_day resets_at 解析错误: %v", f.Quotas[0].Reset7)
 	}
 }

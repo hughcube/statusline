@@ -27,6 +27,7 @@ type Info struct {
 	Payload    []byte
 	Output     string
 	Extra      any
+	Billing    any // cached balance state; never contains a credential
 }
 
 // DirName is the cache sub-directory that holds captures.

@@ -18,8 +18,10 @@ that can pipe a JSON payload into a command.
 
 - [Why statusline?](#why-statusline)
 - [Supported agents](#supported-agents)
+- [Features](#features)
 - [Install](#install)
 - [Configuration](#configuration)
+- [DeepSeek balance](#deepseek-balance)
 - [Width contract](#width-contract)
 - [Performance](#performance)
 - [Debugging](#debugging)
@@ -48,8 +50,19 @@ is one file plus one registry line.
 | :--- | :---: | :---: | :--- |
 | CodeBuddy / WorkBuddy | yes | — | window usage from `used_percentage`, byte-budget aware |
 | Google Antigravity | yes | yes | quota groups `P` / `G` / `G4`, animated state icon |
-| Claude Code | yes | — | `rate_limits` only |
+| Claude Code | yes | — | `rate_limits` with reset times; DeepSeek balance |
 | anything else | best effort | — | generic adapter |
+
+## Features
+
+- **One binary, every agent**: Claude Code, CodeBuddy / WorkBuddy, Google Antigravity.
+- **DeepSeek balance**: official `/user/balance`, shown as `DeepSeek ¥10.26`; `!` for insufficient balance, `?` for a stale cache.
+- **Quotas with reset times**: five-hour and seven-day windows from `rate_limits`.
+- **Tokens and cost**: In / Out / Cache / CacheWrite, context usage, session cost and duration.
+- **Git context**: branch, dirty files, ahead/behind, added/deleted lines, worktree.
+- **Width contract**: live width file, payload width, `STATUSLINE_WIDTH`, `COLUMNS`, plus a byte budget for CodeBuddy.
+- **Non-blocking foreground**: git and balance refresh in detached workers; the bar only reads cache.
+- **Zero runtime dependencies**: one static binary, same config on Windows / macOS / Linux.
 
 ## Install
 
@@ -97,6 +110,68 @@ Claude Code:
 }
 ```
 
+## DeepSeek balance
+
+When Claude Code runs against the **official** DeepSeek endpoint
+(`ANTHROPIC_BASE_URL=https://api.deepseek.com/...`), line 2 inserts the current
+session key's balance before the quota segment:
+
+```text
+DeepSeek ¥10.26 | 23%(18:30)/41%(08 09:00) | deepseek-flash 1.0M | v2.1.0
+```
+
+The value comes from the official `GET https://api.deepseek.com/user/balance`;
+only `total_balance` is rendered. DeepSeek has no public cost/usage API, so the
+bar does not show daily or monthly spend.
+
+**Display rules**
+
+| State | Output |
+| :--- | :--- |
+| Normal | `DeepSeek ¥10.26` |
+| Account cannot call the API | `DeepSeek ¥0.00!` |
+| Cache older than 2×TTL, or refresh failed | `DeepSeek ¥10.26?` |
+| Older than `max(2h, 3×TTL)` | balance hidden |
+| Narrow width | drop `DeepSeek` first (`¥10.26`), then hide the amount with the account context |
+
+**Detection and credential**
+
+- Only `https://api.deepseek.com` is accepted (exact hostname match); a relay's
+  token is never sent to DeepSeek.
+- Uses the current Claude Code session's `ANTHROPIC_AUTH_TOKEN` (then
+  `ANTHROPIC_API_KEY`). Different keys use different cache files, so switching
+  accounts never mixes balances.
+- The account segment (`HAIKIT_ACCOUNT` or payload `email`) is independent of
+  the balance. DeepSeek's balance API does not return an account name, so a
+  Claude Code session usually shows only `DeepSeek ¥10.26`.
+
+**Cache and performance**
+
+- Cache: `~/.cache/statusline/billing/deepseek-<sha256:16>.json`, named from
+  `sha256("statusline:billing:deepseek:" + key)`. The name contains no key, key
+  fragment, e-mail, or base URL.
+- The cache stores the **complete `/user/balance` response JSON** plus local
+  metadata, not just today's display fields, so extra currencies and future
+  fields are never lost. It contains no key, request headers, or account data.
+- The foreground reads one small JSON file (measured **~50 µs**) and never
+  performs network I/O. An expired entry starts a detached worker (3 s request
+  timeout); the current frame returns the previous value immediately.
+- Default refresh interval 60 s; failures back off 60 s; `?` appears after
+  2×TTL; the value is hidden after `max(2h, 3×TTL)`.
+
+**Environment variables**
+
+| Variable | Default | Meaning |
+| :--- | ---: | :--- |
+| `STATUSLINE_BILLING_TTL` | `60` | successful refresh interval in seconds; minimum 30; invalid falls back to 60 |
+| `STATUSLINE_BILLING` | on | `off` / `0` / `false` / `no` disables billing |
+| `STATUSLINE_TESTING` | — | `1` disables billing so tests stay deterministic |
+
+**Scope**
+
+Only Claude Code is wired today; `agent.Billable` is the extension point, so
+CodeBuddy / Antigravity can be added with one method.
+
 ## Width contract
 
 The status bar never probes the terminal. Width is resolved in this order:
@@ -131,10 +206,16 @@ it is whitelisted, which can add a few hundred milliseconds):
 The floor is process creation, not parsing: the whole render is a few
 milliseconds, the rest is the host spawning a new process per frame.
 
+The balance adds one small cache read per frame (measured **50 µs**); the
+network request runs in a detached worker and never contributes to the
+foreground. The only visible cost is one process creation on the frame that
+wins the refresh lock, once per TTL.
+
 ## Debugging
 
 ```bash
-# inspect what the parser saw; stderr only, never pollutes the bar
+# inspect what the parser saw; stderr only, never pollutes the bar.
+# Includes the billing state (amount, origin, age, staleness), never the key.
 echo "$PAYLOAD" | statusline bar --debug
 
 # force a width while iterating on layout

@@ -17,8 +17,10 @@ payload 通过 stdin 喂进来的新 Agent 上。
 
 - [为什么需要 statusline](#为什么需要-statusline)
 - [支持的 Agent](#支持的-agent)
+- [功能一览](#功能一览)
 - [安装](#安装)
 - [配置](#配置)
+- [DeepSeek 余额](#deepseek-余额)
 - [宽度契约](#宽度契约)
 - [性能](#性能)
 - [调试](#调试)
@@ -46,8 +48,19 @@ payload 通过 stdin 喂进来的新 Agent 上。
 | :--- | :---: | :---: | :--- |
 | CodeBuddy / WorkBuddy | 是 | — | 窗口占用取 `used_percentage`，按字节预算裁切 |
 | Google Antigravity | 是 | 是 | 配额组 `P` / `G` / `G4`，状态图标带动效 |
-| Claude Code | 是 | — | 只有 `rate_limits` |
+| Claude Code | 是 | — | `rate_limits`（含重置时间）+ DeepSeek 余额 |
 | 其它 | 尽力而为 | — | generic 适配器 |
+
+## 功能一览
+
+- **多 Agent 统一状态栏**：Claude Code、CodeBuddy / WorkBuddy、Google Antigravity 共用一份二进制。
+- **DeepSeek 余额**：直连官方 `/user/balance`，在 line 2 显示 `DeepSeek ¥10.26`；余额不足 `!`，缓存陈旧 `?`。
+- **额度与重置时间**：5 小时 / 7 天窗口使用率，支持 `resets_at` 本地时间。
+- **Token 与成本**：In / Out / Cache / CacheWrite、上下文占用、会话成本、耗时。
+- **Git 上下文**：分支、脏文件数、ahead/behind、增删行数、worktree。
+- **宽度契约**：实时宽度文件、payload 宽度、`STATUSLINE_WIDTH`、`COLUMNS` 逐级回退，CodeBuddy 额外字节预算。
+- **前台零阻塞**：Git 和余额都由后台 worker 刷新，状态栏只读缓存。
+- **单二进制、零运行时依赖**：不需要 bash / perl / node，Windows / macOS / Linux 同一份配置。
 
 ## 安装
 
@@ -94,6 +107,81 @@ Claude Code：
 }
 ```
 
+## DeepSeek 余额
+
+当 Claude Code 使用 **官方** DeepSeek 端点（`ANTHROPIC_BASE_URL=https://api.deepseek.com/...`）时，
+line 2 会在额度段前插入当前会话 key 的账户余额：
+
+```text
+DeepSeek ¥10.26 | 23%(18:30)/41%(08 09:00) | deepseek-flash 1.0M | v2.1.0
+```
+
+余额来自官方 `GET https://api.deepseek.com/user/balance`，只读取 `total_balance`；
+官方没有公开的消费/用量查询 API，因此状态栏不显示日/月消费。
+
+**显示规则**
+
+| 状态 | 显示 |
+| :--- | :--- |
+| 正常 | `DeepSeek ¥10.26` |
+| 余额不足以调用 API | `DeepSeek ¥0.00!` |
+| 缓存超过 2×TTL 未刷新或刷新失败 | `DeepSeek ¥10.26?` |
+| 超过 `max(2h, 3×TTL)` | 隐藏余额段 |
+| 窄屏 | 先去掉 `DeepSeek`，保留 `¥10.26`；再窄则随账户上下文隐藏 |
+
+**识别与凭证**
+
+- 只接受 `https://api.deepseek.com`（hostname 精确匹配）；第三方中转的 token 绝不会发给官方。
+- 使用当前 Claude Code 会话环境里的 `ANTHROPIC_AUTH_TOKEN`（其次 `ANTHROPIC_API_KEY`）；
+  不同 key 对应不同缓存文件，切换 key 不会串号。
+- 账户段（`HAIKIT_ACCOUNT` 或 payload `email`）与余额段相互独立；
+  DeepSeek 余额接口不返回账户名，所以 Claude Code 下通常只显示 `DeepSeek ¥10.26`。
+
+**缓存与性能**
+
+- 缓存：`~/.cache/statusline/billing/deepseek-<sha256:16>.json`；
+  文件名是 `sha256("statusline:billing:deepseek:" + key)` 的前 16 位，
+  不含 key 原文、片段、邮箱或 base URL。
+- 缓存保存**完整的 `/user/balance` 响应 JSON** 加本地元数据，而不是只存当前显示的字段；
+  多币种、未来新增字段都不会丢。文件里没有 key、请求头或账户信息。
+- 前台每帧只读一个小 JSON 文件（实测约 50 µs），**不做网络请求**；过期时拉起 detached worker
+  （请求超时 3 秒），本帧立即返回旧值。
+- 默认刷新间隔 60 秒；刷新失败退避 60 秒；`?` 在 2×TTL 后出现；`max(2h, 3×TTL)` 后隐藏。
+
+缓存示例：
+
+```json
+{
+  "version": 1,
+  "fetched_at": 1762473600,
+  "last_attempt": 1762473600,
+  "status": "ok",
+  "response": {
+    "is_available": true,
+    "balance_infos": [
+      {
+        "currency": "CNY",
+        "total_balance": "10.26",
+        "granted_balance": "0.00",
+        "topped_up_balance": "10.26"
+      }
+    ]
+  }
+}
+```
+
+**环境变量**
+
+| 变量 | 默认 | 说明 |
+| :--- | ---: | :--- |
+| `STATUSLINE_BILLING_TTL` | `60` | 成功刷新间隔（秒），最小 30，非法值回退 60 |
+| `STATUSLINE_BILLING` | 开启 | `off` / `0` / `false` / `no` 完全关闭 |
+| `STATUSLINE_TESTING` | — | `1` 时禁用账单，保证测试确定性 |
+
+**范围**
+
+当前仅 Claude Code 接入；`agent.Billable` 是扩展点，CodeBuddy / Antigravity 将来加一个方法即可。
+
 ## 宽度契约
 
 状态栏**从不探测终端**。宽度按以下顺序取值：
@@ -125,10 +213,14 @@ Windows 11 实测，15 次取样，有 payload 输入、输出两行（杀软已
 
 下限由"每帧创建一个进程"决定，而不是解析开销：整次渲染只有几毫秒。
 
+余额段每帧只多一次小文件读取（实测 **50 µs**）；网络请求在 detached worker 里执行，
+不计入前台耗时。唯一可见开销是抢到刷新锁的那一帧多一次进程创建，每个 TTL 才发生一次。
+
 ## 调试
 
 ```bash
-# 看解析结果；只写 stderr，不会污染状态栏
+# 看解析结果；只写 stderr，不会污染状态栏。
+# 同时输出 billing 状态（金额、来源、时间、是否陈旧），绝不含 key。
 echo "$PAYLOAD" | statusline bar --debug
 
 # 调排版时强制宽度

@@ -42,6 +42,7 @@ type record struct {
 	Payload  json.RawMessage `json:"payload"`
 	Output   string          `json:"output"`
 	Extra    any             `json:"extra,omitempty"`
+	Billing  any             `json:"billing,omitempty"`
 }
 
 type build struct {
@@ -110,6 +111,7 @@ func Capture(in Info) {
 		Payload:  json.RawMessage(in.Payload),
 		Output:   in.Output,
 		Extra:    in.Extra,
+		Billing:  in.Billing,
 	}
 	if !json.Valid(rec.Payload) {
 		quoted, _ := json.Marshal(string(in.Payload))
