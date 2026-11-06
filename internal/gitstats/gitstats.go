@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -47,10 +48,13 @@ type Stats struct {
 func Locate(dir string) (root, native string) {
 	dir = strings.ReplaceAll(dir, "\\", "/")
 	for {
-		if dir == "" || dir == "/" {
+		// Stop at the filesystem root. On Windows a bare drive letter is a
+		// drive-relative path, so joining it with .git would resolve against
+		// the current directory and report an unrelated repository.
+		if dir == "" || dir == "/" || (len(dir) == 2 && dir[1] == ':') {
 			return "", ""
 		}
-		if _, err := os.Stat(filepath.Join(pathx.Native(dir), ".git")); err == nil {
+		if _, err := os.Stat(dir + "/.git"); err == nil {
 			return dir, pathx.Native(dir)
 		}
 		i := strings.LastIndex(dir, "/")
@@ -61,7 +65,6 @@ func Locate(dir string) (root, native string) {
 	}
 }
 
-// CachePath returns the cache file for a repository root.
 func CachePath(cacheDir, root string) string {
 	key := strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
@@ -207,32 +210,23 @@ func readHead(root string) string {
 }
 
 // parseShortstat parses "3 files changed, 12 insertions(+), 4 deletions(-)".
-// Above 1000 lines git prints thousands separators ("1,234 insertions"), so
-// the digits must be collected explicitly.
+// Above 1000 lines git prints thousands separators ("1,001 insertions"), so the
+// number pattern allows commas and they are stripped afterwards.
 func parseShortstat(s string) (add, del int) {
-	num := func(part string) int {
-		var digits strings.Builder
-		for _, r := range part {
-			if r >= '0' && r <= '9' {
-				digits.WriteRune(r)
-			}
+	pick := func(re *regexp.Regexp) int {
+		m := re.FindStringSubmatch(s)
+		if m == nil {
+			return 0
 		}
-		n, _ := strconv.Atoi(digits.String())
-		return n
+		return toInt(strings.ReplaceAll(m[1], ",", ""))
 	}
-	if i := strings.Index(s, "insertion"); i > 0 {
-		head := s[:i]
-		if j := strings.LastIndex(head, ","); j >= 0 {
-			head = head[j+1:]
-		}
-		add = num(head)
-	}
-	if i := strings.Index(s, "deletion"); i > 0 {
-		head := s[:i]
-		if j := strings.LastIndex(head, ","); j >= 0 {
-			head = head[j+1:]
-		}
-		del = num(head)
-	}
+	add = pick(regexp.MustCompile(`([0-9][0-9,]*)\s+insertion`))
+	del = pick(regexp.MustCompile(`([0-9][0-9,]*)\s+deletion`))
 	return
+}
+
+// toInt converts a digit string, returning 0 on garbage.
+func toInt(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }

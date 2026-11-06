@@ -130,6 +130,8 @@ echo "$PAYLOAD" | statusline bar --debug
 echo "$PAYLOAD" | statusline bar --width 157
 ```
 
+线上排查（不改任何 agent 配置：换二进制 → 读抓帧 → 还原）见 [AGENTS.md](AGENTS.md)。
+
 ## 测试
 
 ```bash

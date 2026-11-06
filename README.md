@@ -136,6 +136,9 @@ echo "$PAYLOAD" | statusline bar --debug
 echo "$PAYLOAD" | statusline bar --width 157
 ```
 
+In-production debugging without touching any agent configuration (swap the binary,
+read the captured frame, restore) is documented in [AGENTS.md](AGENTS.md).
+
 ## Testing
 
 ```bash
