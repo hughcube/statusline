@@ -89,6 +89,20 @@ Width therefore comes from outside, in this order:
 If `width_src` is `const` or `env` in a captured frame, the launcher is not
 injecting the live file; that is a launcher problem, not a renderer problem.
 
+
+## Launcher contract (codebuddy.py / equivalent wrapper)
+
+The width file is produced outside this repository, so the two sides must agree:
+
+| Side | Responsibility |
+| :--- | :--- |
+| launcher | writes @@width.<pid>.live@@ atomically **only when the column count changes** (no heartbeat, no periodic writes); injects @@STATUSLINE_WIDTH@@ and @@STATUSLINE_WIDTH_FILE@@ into the CLI environment |
+| binary | reads @@STATUSLINE_WIDTH_FILE@@ once per frame (~0.1 ms), strips CR, falls back to the payload, then to @@STATUSLINE_WIDTH@@ |
+
+On startup the launcher prunes its own @@width.*.live@@ files that are both older than
+7 days and whose PID is no longer running. It never touches other files in the
+cache directory. A missing live file therefore means the launcher died, not that
+the renderer failed.
 ## Symptom -> first action
 
 | Symptom | First action |
