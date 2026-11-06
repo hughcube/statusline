@@ -1,5 +1,5 @@
-statusline
-statusline.exe
-dist/
+/statusline
+/statusline.exe
+/dist/
 *.test
 .DS_Store
