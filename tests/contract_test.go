@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hughcube/statusline/internal/app"
 	"github.com/hughcube/statusline/internal/render"
@@ -245,4 +246,41 @@ func TestContractThinkFromSettings(t *testing.T) {
 			assertNotParts(t, out, c.notWant...)
 		}
 	}
+}
+
+func TestContractLongEmailAndWeeklyReset(t *testing.T) {
+	setupEnv(t)
+	makePayload := func(tw int) string {
+		return fmt.Sprintf(`{
+			"product": "antigravity",
+			"terminal_width": %d,
+			"workspace": {"current_dir": "C:/fixture/project"},
+			"model": {"display_name": "Gemini 3.8 Flash (High)"},
+			"version": "1.5.3",
+			"session_name": "statusline",
+			"plan_tier": "Google AI Pro",
+			"email": "kakuturichennakrishna@gmail.com",
+			"context_window": {"context_window_size": 1048576, "total_input_tokens": 0, "total_output_tokens": 0},
+			"quota": {
+				"3p-5h": {"remaining_fraction": 1.0, "reset_in_seconds": 2700},
+				"3p-weekly": {"remaining_fraction": 0.22, "reset_in_seconds": 66360},
+				"gemini-5h": {"remaining_fraction": 0.96, "reset_in_seconds": 1440},
+				"gemini-weekly": {"remaining_fraction": 0.98, "reset_in_seconds": 66360},
+				"gemini-argon-5h": {"remaining_fraction": 0.99, "reset_in_seconds": 0}
+			},
+			"effort": {"level": "high"}
+		}`, tw)
+	}
+
+	now := time.Now()
+	w7Time := now.Add(66360 * time.Second).Format("02 15:04")
+
+	// 宽度 130 下（完整账号 41 列放不下），账号优先向左截断为 kakuturichenn…(Pro)，5h 和周重置时间均应显示
+	out := renderBar(t, makePayload(130), 130)
+	assertParts(t, out, "kakuturi", "…(Pro)", "P·0%", "/78%", "G·4%", "/2%", "G4·1%", "Gemini 3.8 Flash 1.0M high", "v1.5.3")
+	assertParts(t, out, "("+w7Time+")")
+
+	// 宽度 160 下（放得下全部），账号完整显示，不应带截断省略号
+	outWide := renderBar(t, makePayload(160), 160)
+	assertParts(t, outWide, "kakuturichennakrishna@gmail.com(Pro)", "("+w7Time+")")
 }
