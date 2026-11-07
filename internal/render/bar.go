@@ -64,6 +64,10 @@ func Build(f *agent.Fields, client string, probeW int, git Git) string {
 // result contains the inner newline but no trailing newline.
 func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing) string {
 	f = Normalize(f, client)
+	// Balance and credits come from outside the payload (JWT claims, cached
+	// API responses): keep them on one line before they reach the renderer.
+	bill.Label, bill.Text = OneLine(bill.Label), OneLine(bill.Text)
+	bill.Account, bill.Expiring = OneLine(bill.Account), OneLine(bill.Expiring)
 	st := StyleFor(client, probeW)
 	wt := st.Container
 	if wt < 20 {
@@ -81,7 +85,7 @@ func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing
 		dirmax = 3
 	}
 
-	disp := DisplayPath(f.Dir, HomeDir())
+	disp := OneLine(DisplayPath(f.Dir, HomeDir()))
 	var l1l string
 	if st.ByteLimit > 0 {
 		bdirmax := st.ByteLimit - ByteWidth(l1r) - ByteWidth(gitSeg) - 1
@@ -223,12 +227,14 @@ func lineSeg(g Git) string {
 	return ""
 }
 
-// sessionLabel returns the session name appended to line 1, if any.
+// sessionLabel returns the session name appended to line 1, if any. The name is
+// user-authored text (CodeBuddy derives it from the first message) and must be
+// flattened before its width is measured.
 func sessionLabel(f *agent.Fields) string {
-	if s := strings.TrimSpace(f.Session); s != "" {
+	if s := OneLine(f.Session); s != "" {
 		return s
 	}
-	return BaseName(f.Dir)
+	return OneLine(BaseName(f.Dir))
 }
 
 // buildLine2 degrades progressively: level 0 is the richest, level 4 is model only.
