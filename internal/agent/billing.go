@@ -12,6 +12,12 @@ type BillingSource struct {
 	Provider string
 	Token    string
 	BaseURL  string
+	// UID is the account identity when the credential names one (a CodeBuddy
+	// JWT carries it in the sub claim). The cache is keyed by it so a token
+	// rotation never orphans the snapshot or mixes two accounts.
+	UID string
+	// Account is the display name carried by the credential itself.
+	Account string
 	// Origin says where the credential came from, for --debug and diag. It
 	// never contains the credential itself.
 	Origin string
@@ -30,6 +36,9 @@ type Billable interface {
 const (
 	deepSeekHost    = "api.deepseek.com"
 	deepSeekBaseURL = "https://api.deepseek.com"
+
+	workBuddyHost    = "www.workbuddy.cn"
+	workBuddyBaseURL = "https://www.workbuddy.cn"
 )
 
 // IsOfficialDeepSeekURL reports whether raw is an HTTPS URL on the official
@@ -45,6 +54,25 @@ func IsOfficialDeepSeekURL(raw string) bool {
 		return false
 	}
 	if !strings.EqualFold(u.Hostname(), deepSeekHost) {
+		return false
+	}
+	if p := u.Port(); p != "" && p != "443" {
+		return false
+	}
+	return true
+}
+
+// IsOfficialWorkBuddyURL mirrors IsOfficialDeepSeekURL for the Tencent billing
+// host that serves the CodeBuddy credits API.
+func IsOfficialWorkBuddyURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.User != nil {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	if !strings.EqualFold(u.Hostname(), workBuddyHost) {
 		return false
 	}
 	if p := u.Port(); p != "" && p != "443" {

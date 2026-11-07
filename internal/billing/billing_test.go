@@ -322,8 +322,8 @@ func TestLoadDisabled(t *testing.T) {
 func TestLoadWithoutBillableAgent(t *testing.T) {
 	t.Setenv("STATUSLINE_TESTING", "")
 	t.Setenv("STATUSLINE_BILLING", "")
-	if st := Load(t.TempDir(), "codebuddy"); st.Amount != "" {
-		t.Fatalf("CodeBuddy must not be billable yet: %+v", st)
+	if st := Load(t.TempDir(), "generic"); st.Amount != "" {
+		t.Fatalf("a generic agent must stay non-billable: %+v", st)
 	}
 }
 

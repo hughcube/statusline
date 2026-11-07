@@ -62,7 +62,13 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 	bill := render.Billing{}
 	if !billing.Disabled() {
 		bstate = billing.Load(CacheDir(), a.Name())
-		bill = render.Billing{Label: bstate.Label, Text: bstate.Amount, Stale: bstate.Stale}
+		bill = render.Billing{
+			Label:    bstate.Label,
+			Text:     bstate.Amount,
+			Stale:    bstate.Stale,
+			Account:  bstate.Account,
+			Expiring: bstate.Expiring,
+		}
 	}
 
 	return BarResult{

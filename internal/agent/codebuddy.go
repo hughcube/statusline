@@ -1,6 +1,11 @@
 package agent
 
-import "strings"
+import (
+	"encoding/base64"
+	"encoding/json"
+	"os"
+	"strings"
+)
 
 // CodeBuddy handles the CodeBuddy / WorkBuddy "Status" hook payload.
 //
@@ -63,4 +68,73 @@ func (CodeBuddy) Parse(p *Payload) *Fields {
 	f.CostUSD, _ = p.Float("cost", "total_cost_usd")
 	f.DurMS = p.Int("cost", "total_duration_ms")
 	return f
+}
+
+// BillingSources exposes the bearer that token-auth sessions carry in the
+// environment. The JWT names the account (sub / nickname), so the credits
+// snapshot is keyed by uid and labelled with the identity the credential
+// itself asserts instead of a possibly stale settings file.
+func (CodeBuddy) BillingSources() []BillingSource {
+	token := strings.TrimSpace(os.Getenv("CODEBUDDY_AUTH_TOKEN"))
+	if token == "" {
+		return nil
+	}
+	uid, account := jwtIdentity(token)
+	return []BillingSource{{
+		Provider: "codebuddy",
+		Token:    token,
+		BaseURL:  "https://www.workbuddy.cn",
+		UID:      uid,
+		Account:  maskAccount(account),
+		Origin:   "codebuddy:env:CODEBUDDY_AUTH_TOKEN",
+	}}
+}
+
+// jwtIdentity reads sub / nickname out of a JWT payload without verifying the
+// signature. That is deliberate: the values are display and cache-key material
+// only, and the server stays the authority on every request.
+func jwtIdentity(token string) (uid, account string) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return "", ""
+	}
+	var claims struct {
+		Sub      string `json:"sub"`
+		Nickname string `json:"nickname"`
+		Username string `json:"preferred_username"`
+		Name     string `json:"name"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return "", ""
+	}
+	account = claims.Nickname
+	if account == "" {
+		account = claims.Username
+	}
+	if account == "" {
+		account = claims.Name
+	}
+	return claims.Sub, account
+}
+
+// maskAccount hides a phone number used as a nickname.
+func maskAccount(name string) string {
+	s := strings.TrimSpace(name)
+	if len(s) == 11 && s[0] == '1' && isDigits(s) {
+		return s[:3] + "****" + s[7:]
+	}
+	return s
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
