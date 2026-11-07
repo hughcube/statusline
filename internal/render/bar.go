@@ -64,6 +64,10 @@ func Build(f *agent.Fields, client string, probeW int, git Git) string {
 // result contains the inner newline but no trailing newline.
 func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing) string {
 	f = Normalize(f, client)
+	// Balance and credits come from outside the payload (JWT claims, cached
+	// API responses): keep them on one line before they reach the renderer.
+	bill.Label, bill.Text = OneLine(bill.Label), OneLine(bill.Text)
+	bill.Account, bill.Expiring = OneLine(bill.Account), OneLine(bill.Expiring)
 	st := StyleFor(client, probeW)
 	wt := st.Container
 	if wt < 20 {
@@ -81,7 +85,7 @@ func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing
 		dirmax = 3
 	}
 
-	disp := DisplayPath(f.Dir, HomeDir())
+	disp := OneLine(DisplayPath(f.Dir, HomeDir()))
 	var l1l string
 	if st.ByteLimit > 0 {
 		bdirmax := st.ByteLimit - ByteWidth(l1r) - ByteWidth(gitSeg) - 1
@@ -223,12 +227,14 @@ func lineSeg(g Git) string {
 	return ""
 }
 
-// sessionLabel returns the session name appended to line 1, if any.
+// sessionLabel returns the session name appended to line 1, if any. The name is
+// user-authored text (CodeBuddy derives it from the first message) and must be
+// flattened before its width is measured.
 func sessionLabel(f *agent.Fields) string {
-	if s := strings.TrimSpace(f.Session); s != "" {
+	if s := OneLine(f.Session); s != "" {
 		return s
 	}
-	return BaseName(f.Dir)
+	return OneLine(BaseName(f.Dir))
 }
 
 // buildLine2 degrades progressively: level 0 is the richest, level 4 is model only.
@@ -244,23 +250,6 @@ func buildLine2(f *agent.Fields, wt int, bill Billing) string {
 
 func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 	var parts []string
-
-	// The credits segment carries its own account name, so the standalone
-	// account segment steps aside instead of printing the name twice.
-	if bill.Account == "" {
-		acct := Account(f)
-		plan := PlanName(f.PlanTier)
-		switch {
-		case acct != "" && lvl <= 3:
-			if plan != "" && lvl <= 2 {
-				parts = append(parts, acct+"("+plan+")")
-			} else {
-				parts = append(parts, acct)
-			}
-		case plan != "" && lvl <= 2:
-			parts = append(parts, plan)
-		}
-	}
 
 	if b := billingSeg(bill, lvl); b != "" {
 		parts = append(parts, b)
@@ -290,7 +279,75 @@ func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 	if lvl <= 2 && f.Version != "" {
 		parts = append(parts, "v"+f.Version)
 	}
-	return strings.Join(parts, " | ")
+
+	rest := strings.Join(parts, " | ")
+	if bill.Account != "" {
+		return rest
+	}
+
+	avail := wt
+	if rest != "" {
+		avail = wt - SegWidth(rest) - 3 // 3 columns for " | "
+	}
+	acctSeg := buildAccountSeg(f, lvl, avail)
+	if acctSeg != "" {
+		if rest != "" {
+			return acctSeg + " | " + rest
+		}
+		return acctSeg
+	}
+	return rest
+}
+
+// buildAccountSeg renders the account name and plan tier within the available
+// width budget, truncating the account first so quotas and reset times survive.
+func buildAccountSeg(f *agent.Fields, lvl, avail int) string {
+	acct := Account(f)
+	plan := PlanName(f.PlanTier)
+
+	if acct == "" && plan == "" {
+		return ""
+	}
+
+	if acct == "" {
+		if lvl <= 2 && SegWidth(plan) <= avail {
+			return plan
+		}
+		return ""
+	}
+
+	if lvl >= 4 || avail <= 0 {
+		return ""
+	}
+
+	if plan != "" && lvl <= 2 {
+		planPart := "(" + plan + ")"
+		full := acct + planPart
+		if SegWidth(full) <= avail {
+			return full
+		}
+		pw := SegWidth(planPart)
+		if avail >= pw+2 {
+			return TruncHead(acct, avail-pw) + planPart
+		}
+		if SegWidth(plan) <= avail {
+			return plan
+		}
+		return ""
+	}
+
+	if lvl <= 3 {
+		if SegWidth(acct) <= avail {
+			return acct
+		}
+		if lvl == 0 {
+			return acct
+		}
+		if avail >= 2 {
+			return TruncHead(acct, avail)
+		}
+	}
+	return ""
 }
 
 // billingSeg renders the balance. The provider label is the first thing to go
@@ -318,7 +375,7 @@ func billingSeg(b Billing, lvl int) string {
 	if b.Stale {
 		seg += "?"
 	}
-	if lvl <= 1 && b.Label != "" {
+	if lvl == 0 && b.Label != "" {
 		seg = b.Label + " " + seg
 	}
 	return seg
@@ -330,13 +387,13 @@ func quotaSeg(quotas []agent.Quota, lvl int) string {
 		p5, p7 := "", ""
 		if q.Used5 >= 0 {
 			p5 = fmt.Sprintf("%d%%", q.Used5)
-			if lvl <= 1 && !q.Reset5.IsZero() {
+			if lvl <= 2 && !q.Reset5.IsZero() {
 				p5 += "(" + q.Reset5.Format("15:04") + ")"
 			}
 		}
 		if q.Used7 >= 0 && lvl <= 3 {
 			p7 = fmt.Sprintf("%d%%", q.Used7)
-			if lvl == 0 && !q.Reset7.IsZero() {
+			if lvl <= 2 && !q.Reset7.IsZero() {
 				p7 += "(" + q.Reset7.Format("02 15:04") + ")"
 			}
 		}

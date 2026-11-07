@@ -51,17 +51,38 @@ func BaseName(p string) string {
 	return filepath.Base(p)
 }
 
+// OneLine collapses control characters into single spaces so a text segment can
+// never add a row to the status bar. Host payloads carry user-authored text:
+// CodeBuddy derives session_name from the first message, so a multi-line prompt
+// would otherwise be pasted into line 1 verbatim and break the two-line layout.
+func OneLine(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	space := true
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			r = ' '
+		}
+		if r == ' ' {
+			if space {
+				continue
+			}
+			space = true
+		} else {
+			space = false
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // Account returns the account label: HAIKIT_ACCOUNT wins, payload email is the fallback.
 func Account(f *agent.Fields) string {
 	a := os.Getenv("HAIKIT_ACCOUNT")
 	if a == "" {
 		a = f.Email
 	}
-	a = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(a)
-	for strings.Contains(a, "  ") {
-		a = strings.ReplaceAll(a, "  ", " ")
-	}
-	a = strings.TrimSpace(a)
+	a = OneLine(a)
 	if a == "" {
 		return ""
 	}
@@ -228,7 +249,7 @@ func ModelSeg(f *agent.Fields) string {
 	if len(flags) > 0 {
 		seg += " " + strings.Join(flags, " ")
 	}
-	return seg
+	return OneLine(seg)
 }
 
 // cleanModel strips capacity annotations ([1m]/[200k]) and consumed parentheses.
