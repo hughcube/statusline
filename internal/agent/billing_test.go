@@ -81,9 +81,16 @@ func TestClaudeBillingSourcesMissingToken(t *testing.T) {
 }
 
 func TestOtherAgentsAreNotBillableYet(t *testing.T) {
-	for _, a := range []Agent{CodeBuddy{}, Antigravity{}, Generic{}} {
+	for _, a := range []Agent{Antigravity{}, Generic{}} {
 		if _, ok := a.(Billable); ok {
 			t.Errorf("%s must not implement Billable yet", a.Name())
 		}
+	}
+}
+
+func TestCodeBuddyIsBillable(t *testing.T) {
+	var a Agent = CodeBuddy{}
+	if _, ok := a.(Billable); !ok {
+		t.Fatal("CodeBuddy must expose its credits credential")
 	}
 }

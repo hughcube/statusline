@@ -26,6 +26,11 @@ type Billing struct {
 	Label string
 	Text  string
 	Stale bool
+	// Account and Expiring switch the segment to the credits style
+	// "懂 (3,359 | 59 in 24h)": one group, dropped from the inside out. They
+	// stay empty for balance-style providers such as DeepSeek.
+	Account  string
+	Expiring string
 }
 
 // Style captures one CLI's container constraints.
@@ -240,17 +245,21 @@ func buildLine2(f *agent.Fields, wt int, bill Billing) string {
 func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 	var parts []string
 
-	acct := Account(f)
-	plan := PlanName(f.PlanTier)
-	switch {
-	case acct != "" && lvl <= 3:
-		if plan != "" && lvl <= 2 {
-			parts = append(parts, acct+"("+plan+")")
-		} else {
-			parts = append(parts, acct)
+	// The credits segment carries its own account name, so the standalone
+	// account segment steps aside instead of printing the name twice.
+	if bill.Account == "" {
+		acct := Account(f)
+		plan := PlanName(f.PlanTier)
+		switch {
+		case acct != "" && lvl <= 3:
+			if plan != "" && lvl <= 2 {
+				parts = append(parts, acct+"("+plan+")")
+			} else {
+				parts = append(parts, acct)
+			}
+		case plan != "" && lvl <= 2:
+			parts = append(parts, plan)
 		}
-	case plan != "" && lvl <= 2:
-		parts = append(parts, plan)
 	}
 
 	if b := billingSeg(bill, lvl); b != "" {
@@ -290,6 +299,20 @@ func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
 func billingSeg(b Billing, lvl int) string {
 	if b.Text == "" || lvl > 3 {
 		return ""
+	}
+	if b.Account != "" {
+		total := b.Text
+		if b.Stale {
+			total += "?"
+		}
+		switch {
+		case lvl <= 1 && b.Expiring != "":
+			return b.Account + " (" + total + " | " + b.Expiring + " in 24h)"
+		case lvl <= 2:
+			return b.Account + " (" + total + ")"
+		default:
+			return total
+		}
 	}
 	seg := b.Text
 	if b.Stale {
