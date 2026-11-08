@@ -181,3 +181,16 @@ func TestIsSessionIDAndUUID(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkRender(b *testing.B) {
+	f := &agent.Fields{
+		Session:   "AGY Session Name Display Issue",
+		SessionID: "4a7b9866-acb4-4294-99c0-8cbc886cfaa8",
+		Dir:       "C:/Users/hugh.li/Data/ms/statusline",
+		State:     "idle",
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = Render(f)
+	}
+}

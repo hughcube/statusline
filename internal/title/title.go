@@ -165,7 +165,7 @@ func FromCache(sessionID string) string {
 // fromTranscript scans the transcript for the first user request and records a
 // negative cache entry when nothing is found.
 func fromTranscript(f *agent.Fields) string {
-	if len(f.SessionID) < 8 {
+	if len(f.SessionID) < 8 || f.TranscriptPath == "" {
 		return ""
 	}
 	short := f.SessionID[:8]
@@ -189,7 +189,20 @@ func fromTranscript(f *agent.Fields) string {
 	}
 
 	path := f.TranscriptPath
-	if path == "" {
+	if path != "" {
+		if _, err := os.Stat(path); err != nil {
+			// Antigravity CLI reports .gemini/antigravity instead of .gemini/antigravity-cli
+			for _, pat := range []string{filepath.Join(".gemini", "antigravity"), "/.gemini/antigravity", "\\.gemini\\antigravity"} {
+				if strings.Contains(path, pat) {
+					fixPath := strings.Replace(path, pat, pat+"-cli", 1)
+					if _, err := os.Stat(fixPath); err == nil {
+						path = fixPath
+						break
+					}
+				}
+			}
+		}
+	} else {
 		base := os.Getenv("AI_APP_DATA_DIR")
 		if base == "" {
 			base = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli")

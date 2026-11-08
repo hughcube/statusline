@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -84,5 +86,53 @@ func TestParseClaudeRateLimits(t *testing.T) {
 	}
 	if !f.Quotas[0].Reset7.Equal(time.Unix(1762992000, 0)) {
 		t.Errorf("seven_day resets_at 解析错误: %v", f.Quotas[0].Reset7)
+	}
+}
+
+func TestAntigravityReadsAnnotationPbtxtDirectly(t *testing.T) {
+	appData := t.TempDir()
+	t.Setenv("AI_APP_DATA_DIR", appData)
+
+	sid := "ad7eec22-0aa0-490e-b7db-ce732dd01bf3"
+	annotDir := filepath.Join(appData, "annotations")
+	if err := os.MkdirAll(annotDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pbtxtFile := filepath.Join(annotDir, sid+".pbtxt")
+	if err := os.WriteFile(pbtxtFile, []byte("title:\"Fix Statusline Error\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := []byte(`{
+		"product": "antigravity",
+		"session_id": "` + sid + `",
+		"conversation_id": "` + sid + `",
+		"model": {"display_name": "Gemini 3.8 Flash"}
+	}`)
+	p := Parse(payload)
+	f := Antigravity{}.Parse(p)
+	if f.Session != "Fix Statusline Error" {
+		t.Fatalf("Session = %q, want %q", f.Session, "Fix Statusline Error")
+	}
+	if f.SessionID != sid {
+		t.Fatalf("SessionID = %q, want %q", f.SessionID, sid)
+	}
+}
+
+func TestAntigravityFallbackIgnoresRawUUID(t *testing.T) {
+	appData := t.TempDir()
+	t.Setenv("AI_APP_DATA_DIR", appData)
+
+	sid := "ad7eec22-0aa0-490e-b7db-ce732dd01bf3"
+	payload := []byte(`{
+		"product": "antigravity",
+		"session_id": "` + sid + `",
+		"session_name": "` + sid + `",
+		"model": {"display_name": "Gemini 3.8 Flash"}
+	}`)
+	p := Parse(payload)
+	f := Antigravity{}.Parse(p)
+	if f.Session != "" {
+		t.Fatalf("Session should be empty when no title and session_name is UUID, got %q", f.Session)
 	}
 }

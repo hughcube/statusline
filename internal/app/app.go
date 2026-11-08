@@ -110,7 +110,7 @@ func Title(raw []byte, agentName string) (string, string, *agent.Fields) {
 	// Title semantics are CLI independent: state and transcript come straight
 	// from the payload rather than from an adapter's status bar focus.
 	f.State = p.Str("agent_state")
-	if f.TranscriptPath == "" {
+	if a.Name() != "antigravity" && f.TranscriptPath == "" {
 		f.TranscriptPath = p.Str("transcript_path")
 	}
 	f.IsError = HasError(p)

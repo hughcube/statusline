@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -32,7 +34,6 @@ func (Antigravity) Parse(p *Payload) *Fields {
 		Dir:       p.StrAny([]string{"workspace", "current_dir"}, []string{"workspace", "project_dir"}, []string{"cwd"}),
 		Model:     p.Str("model", "display_name"),
 		Version:   p.Str("version"),
-		Session:   p.StrAny([]string{"session_name"}, []string{"session_id"}, []string{"conversation_id"}),
 		SessionID: p.Str("session_id"),
 		PlanTier:  p.Str("plan_tier"),
 		Email:     p.Str("email"),
@@ -46,7 +47,17 @@ func (Antigravity) Parse(p *Payload) *Fields {
 	if f.SessionID == "" {
 		f.SessionID = p.Str("conversation_id")
 	}
-	f.TranscriptPath = p.Str("transcript_path")
+
+	// Antigravity persists human-readable conversation titles directly in
+	// ~/.gemini/antigravity-cli/annotations/<sid>.pbtxt as title:"...".
+	// Direct read is microsecond-fast (~0.05ms) and needs no secondary cache.
+	// If missing, fall back to payload session_name (if not a raw UUID); never
+	// fall back to machine UUIDs.
+	if t := readAntigravityTitle(f.SessionID); t != "" {
+		f.Session = t
+	} else if s := p.Str("session_name"); s != "" && !isUUID(s) {
+		f.Session = s
+	}
 
 	f.InTokens = p.Int("context_window", "total_input_tokens")
 	f.OutTokens = p.Int("context_window", "total_output_tokens")
@@ -143,4 +154,57 @@ func parseAntigravityQuotas(p *Payload) []Quota {
 		}
 	}
 	return out
+}
+
+// readAntigravityTitle reads the session title directly from the Antigravity
+// annotations file (~/.gemini/antigravity-cli/annotations/<sid>.pbtxt).
+func readAntigravityTitle(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	base := os.Getenv("AI_APP_DATA_DIR")
+	if base == "" {
+		if os.Getenv("STATUSLINE_TESTING") == "1" {
+			return ""
+		}
+		home := os.Getenv("USERPROFILE")
+		if home == "" {
+			home = os.Getenv("HOME")
+		}
+		base = filepath.Join(home, ".gemini", "antigravity-cli")
+	}
+	path := filepath.Join(base, "annotations", sessionID+".pbtxt")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	s := string(b)
+	idx := strings.Index(s, "title:")
+	if idx < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(s[idx+len("title:"):])
+	if strings.HasPrefix(rest, "\"") {
+		rest = rest[1:]
+		if end := strings.Index(rest, "\""); end >= 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+	}
+	return ""
+}
+
+// isUUID checks whether s matches the standard 36-char or 32-char hex UUID format.
+func isUUID(s string) bool {
+	if len(s) == 36 && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-' {
+		return true
+	}
+	if len(s) == 32 {
+		for _, r := range s {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
