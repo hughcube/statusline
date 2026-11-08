@@ -172,13 +172,26 @@ func writeCache(path string, st Stats) {
 
 // refreshAsync spawns a detached worker so the caller returns immediately.
 func refreshAsync(path, root string) {
+	if os.Getenv("STATUSLINE_TESTING") == "1" {
+		releaseLock(path)
+		return
+	}
 	exe, err := os.Executable()
 	if err != nil {
+		releaseLock(path)
+		return
+	}
+	exeLower := strings.ToLower(exe)
+	if strings.HasSuffix(exeLower, ".test") || strings.HasSuffix(exeLower, ".test.exe") {
+		releaseLock(path)
 		return
 	}
 	cmd := exec.Command(exe, "__gitcache", root, path)
 	pathx.DetachCmd(cmd)
-	_ = cmd.Start()
+	if err := cmd.Start(); err != nil {
+		releaseLock(path)
+		return
+	}
 	_ = cmd.Process.Release()
 }
 

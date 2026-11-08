@@ -115,23 +115,24 @@ func isUUID(s string) bool {
 
 // glyph maps agent_state to an icon. working/thinking animate by the clock.
 func glyph(state string, isError bool) string {
+	if isError {
+		return "❌"
+	}
+	state = strings.ToLower(strings.TrimSpace(state))
 	switch state {
-	case "working":
+	case "working", "running", "executing", "busy", "in_progress":
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		return frames[int((millis()/73)%int64(len(frames)))]
-	case "thinking":
+	case "thinking", "generating", "reasoning":
 		frames := []string{"✦", "✧", "✦", "✧", "✨", "✦", "✧", "✦"}
 		return frames[int((millis()/113)%int64(len(frames)))]
 	case "error", "failed", "failure", "exception":
 		return "❌"
-	case "cancelled", "canceled", "interrupted", "stopped", "aborted":
+	case "cancelled", "canceled", "interrupted", "stopped", "aborted", "paused":
 		return "⏹️"
-	case "waiting_approval", "waiting_permission", "confirm", "blocked":
+	case "waiting_approval", "waiting_permission", "waiting_confirmation", "confirm", "blocked", "pending":
 		return "⚠️"
-	case "waiting_for_input", "idle", "":
-		if isError {
-			return "❌"
-		}
+	case "waiting_for_input", "waiting_user", "idle", "ready", "done", "":
 		return "❇️"
 	}
 	return "[" + state + "]"

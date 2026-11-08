@@ -104,6 +104,7 @@ func TestReadHeadBranchesAndDetached(t *testing.T) {
 }
 
 func TestLoadFirstFramePopulatesBranchFromHead(t *testing.T) {
+	t.Setenv("STATUSLINE_TESTING", "1")
 	cacheDir := t.TempDir()
 	repoDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
@@ -126,6 +127,7 @@ func TestLoadFirstFramePopulatesBranchFromHead(t *testing.T) {
 }
 
 func TestLoadBranchSwitchInvalidatesStaleCache(t *testing.T) {
+	t.Setenv("STATUSLINE_TESTING", "1")
 	cacheDir := t.TempDir()
 	repoDir := t.TempDir()
 	gitDir := filepath.Join(repoDir, ".git")
