@@ -48,7 +48,7 @@ func Resolve(f *agent.Fields) string {
 		return s
 	}
 	if f.SessionID != "" {
-		if t := fromCache(f.SessionID); t != "" {
+		if t := FromCache(f.SessionID); t != "" {
 			return t
 		}
 		if t := fromTranscript(f); t != "" {
@@ -143,15 +143,15 @@ func millis() int64 {
 
 // clean applies the same text sanitising the status bar uses.
 func clean(s string) string {
-	s = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "\\r", " ", "\\n", " ", "\\t", " ", "\"", "").Replace(s)
-	for strings.Contains(s, "  ") {
-		s = strings.ReplaceAll(s, "  ", " ")
+	if len(s) > 200 {
+		s = s[:200]
 	}
-	return strings.TrimSpace(s)
+	s = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "\\r", " ", "\\n", " ", "\\t", " ", "\"", "").Replace(s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
-// fromCache returns the title resolved in a previous invocation.
-func fromCache(sessionID string) string {
+// FromCache returns the title resolved in a previous invocation.
+func FromCache(sessionID string) string {
 	if len(sessionID) < 8 {
 		return ""
 	}
@@ -180,6 +180,14 @@ func fromTranscript(f *agent.Fields) string {
 		}
 	}
 
+	recordNeg := func() {
+		_ = os.MkdirAll(dir, 0o755)
+		tmpNeg := fmt.Sprintf("%s.%d.%d.tmp", negPath, os.Getpid(), time.Now().UnixNano())
+		if os.WriteFile(tmpNeg, []byte(fmt.Sprint(time.Now().Unix())), 0o644) == nil {
+			_ = os.Rename(tmpNeg, negPath)
+		}
+	}
+
 	path := f.TranscriptPath
 	if path == "" {
 		base := os.Getenv("AI_APP_DATA_DIR")
@@ -188,16 +196,10 @@ func fromTranscript(f *agent.Fields) string {
 		}
 		path = filepath.Join(base, "brain", f.SessionID, ".system_generated", "logs", "transcript.jsonl")
 	}
-	if _, err := os.Stat(path); err != nil {
-		return ""
-	}
+
 	title := scanTranscript(path)
 	if title == "" {
-		_ = os.MkdirAll(dir, 0o755)
-		tmpNeg := fmt.Sprintf("%s.%d.%d.tmp", negPath, os.Getpid(), time.Now().UnixNano())
-		if os.WriteFile(tmpNeg, []byte(fmt.Sprint(time.Now().Unix())), 0o644) == nil {
-			_ = os.Rename(tmpNeg, negPath)
-		}
+		recordNeg()
 		return ""
 	}
 	_ = os.MkdirAll(dir, 0o755)
@@ -210,7 +212,7 @@ func fromTranscript(f *agent.Fields) string {
 	return title
 }
 
-// scanTranscript looks at the first 30 lines for a USER_INPUT entry carrying a
+// scanTranscript looks at the first 10 lines for a USER_INPUT entry carrying a
 // <USER_REQUEST> block.
 //
 // The file is streamed: real transcripts grow to tens of megabytes and this
@@ -222,9 +224,9 @@ func scanTranscript(path string) string {
 	}
 	defer f.Close()
 
-	const maxLines = 30
-	const maxLineBytes = 2 << 20
-	reader := bufio.NewReaderSize(f, 64<<10)
+	const maxLines = 10
+	const maxLineBytes = 1 << 20
+	reader := bufio.NewReaderSize(f, 32<<10)
 
 	for n := 0; n < maxLines; n++ {
 		line, readErr := reader.ReadString('\n')

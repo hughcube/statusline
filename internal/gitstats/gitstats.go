@@ -25,9 +25,9 @@ import (
 )
 
 // TTL is the cache lifetime; stale entries are still rendered while a refresh
-// runs in the background. With SWR, 5s provides prompt awareness of changes
-// while keeping execution entirely non-blocking.
-const TTL = 5 * time.Second
+// runs in the background. With SWR, 20s provides responsive git stats
+// while keeping execution entirely non-blocking and minimising worker forks.
+const TTL = 20 * time.Second
 
 // lockTTL bounds how long a refresh may hold the lock before another frame may
 // steal it.
@@ -177,6 +177,7 @@ func refreshAsync(path, root string) {
 		return
 	}
 	cmd := exec.Command(exe, "__gitcache", root, path)
+	pathx.DetachCmd(cmd)
 	_ = cmd.Start()
 	_ = cmd.Process.Release()
 }

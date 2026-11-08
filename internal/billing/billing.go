@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/hughcube/statusline/internal/agent"
+	"github.com/hughcube/statusline/internal/pathx"
 )
 
 const (
@@ -528,6 +529,7 @@ func spawnWorker(agentName, path string) {
 		return
 	}
 	cmd := exec.Command(exe, "__billingcache", agentName, path)
+	pathx.DetachCmd(cmd)
 	if err := cmd.Start(); err != nil {
 		releaseLock(path)
 		writeFailure(path, "cannot start refresh worker")

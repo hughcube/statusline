@@ -45,10 +45,12 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 	}
 
 	// Share the unified title cache with the status bar: if f.Session is a raw
-	// machine ID/UUID, resolve it via title package so line 1 renders the real
-	// user request while sharing the exact same cache file.
+	// machine ID/UUID and the title cache exists, render the real title.
+	// To keep status bar rendering instantaneous (<1ms) on new sessions, the
+	// foreground Bar never blocks on transcript disk parsing; that is left to
+	// the window title runner or subsequent frames once cached.
 	if title.IsSessionID(f.Session, f.SessionID) {
-		if t := title.Resolve(f); t != "" {
+		if t := title.FromCache(f.SessionID); t != "" {
 			f.Session = t
 		}
 	}
