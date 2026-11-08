@@ -238,10 +238,10 @@ func CachePath(cacheDir string, src agent.BillingSource) string {
 	return filepath.Join(cacheDir, cacheSubdir, entryName(src))
 }
 
-// Load returns the cached snapshot for the first discoverable credential. If
-// no cache exists yet, it fetches synchronously once so the status bar renders
-// balance immediately on the very first frame. When a valid cache exists,
-// expired entries are refreshed via a detached background worker.
+// Load returns the cached snapshot for the first discoverable credential. It
+// never blocks on the network and never returns an error to the caller. A miss
+// or an expired entry schedules a detached worker and this frame renders the
+// previous value immediately (or empty if none exists yet).
 func Load(cacheDir, agentName string) State {
 	if Disabled() {
 		return State{}
@@ -254,13 +254,7 @@ func Load(cacheDir, agentName string) State {
 	path := CachePath(cacheDir, src)
 	e := readEntry(path)
 	now := time.Now()
-	if e.lastOK.IsZero() && shouldRefresh(e, now, ttl) {
-		if acquireLock(path) {
-			CacheWorker(agentName, path)
-			e = readEntry(path)
-			now = time.Now()
-		}
-	} else if shouldRefresh(e, now, ttl) && acquireLock(path) {
+	if shouldRefresh(e, now, ttl) && acquireLock(path) {
 		spawnWorker(agentName, path)
 	}
 	return stateFrom(e, src, now, ttl)
@@ -427,7 +421,7 @@ func writeEntry(path string, e entry) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	tmp := path + ".tmp"
+	tmp := fmt.Sprintf("%s.%d.%d.tmp", path, os.Getpid(), time.Now().UnixNano())
 	if os.WriteFile(tmp, b, 0o600) == nil {
 		_ = os.Rename(tmp, path)
 	}

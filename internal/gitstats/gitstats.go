@@ -12,6 +12,7 @@ package gitstats
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -109,10 +110,17 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 	if !ts.IsZero() && time.Since(ts) < TTL {
 		return st
 	}
-	if sync || ts.IsZero() {
+	if sync {
 		st = Fetch(native)
 		writeCache(path, st)
 		return st
+	}
+	// Foreground MUST NEVER block on external subprocesses (git).
+	// If this is the very first frame (ts.IsZero()), write the initial branch
+	// cache immediately to avoid repeated lookups, then let the background worker
+	// fetch full dirty/ahead stats asynchronously.
+	if ts.IsZero() {
+		writeCache(path, st)
 	}
 	// Only one frame may own the refresh: without this, a stale cache at 3-5 fps
 	// spawns a git process per frame until the worker writes the result.
@@ -156,7 +164,7 @@ func writeCache(path string, st Stats) {
 		strconv.Itoa(st.Add),
 		strconv.Itoa(st.Del),
 	}, "\t")
-	tmp := path + ".tmp"
+	tmp := fmt.Sprintf("%s.%d.%d.tmp", path, os.Getpid(), time.Now().UnixNano())
 	if os.WriteFile(tmp, []byte(line), 0o644) == nil {
 		_ = os.Rename(tmp, path)
 	}

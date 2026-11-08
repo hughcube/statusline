@@ -194,11 +194,18 @@ func fromTranscript(f *agent.Fields) string {
 	title := scanTranscript(path)
 	if title == "" {
 		_ = os.MkdirAll(dir, 0o755)
-		_ = os.WriteFile(negPath, []byte(fmt.Sprint(time.Now().Unix())), 0o644)
+		tmpNeg := fmt.Sprintf("%s.%d.%d.tmp", negPath, os.Getpid(), time.Now().UnixNano())
+		if os.WriteFile(tmpNeg, []byte(fmt.Sprint(time.Now().Unix())), 0o644) == nil {
+			_ = os.Rename(tmpNeg, negPath)
+		}
 		return ""
 	}
 	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(filepath.Join(dir, "title_"+short), []byte(title+"\n"), 0o644)
+	target := filepath.Join(dir, "title_"+short)
+	tmp := fmt.Sprintf("%s.%d.%d.tmp", target, os.Getpid(), time.Now().UnixNano())
+	if os.WriteFile(tmp, []byte(title+"\n"), 0o644) == nil {
+		_ = os.Rename(tmp, target)
+	}
 	_ = os.Remove(negPath)
 	return title
 }

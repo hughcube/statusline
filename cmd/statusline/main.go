@@ -32,6 +32,13 @@ import (
 var version = "dev"
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			// In case of unexpected panic, exit cleanly with 0 so the host
+			// statusline runner never marks it as a failure or kills the hook.
+			os.Exit(0)
+		}
+	}()
 	diag.SetVersion(version)
 	if len(os.Args) < 2 {
 		usage()
