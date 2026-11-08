@@ -11,6 +11,7 @@
 package gitstats
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,10 @@ const TTL = 25 * time.Second
 // lockTTL bounds how long a refresh may hold the lock before another frame may
 // steal it.
 const lockTTL = 10 * time.Second
+
+// gitTimeout bounds a single background git invocation so a stalled subprocess
+// cannot linger indefinitely.
+const gitTimeout = 5 * time.Second
 
 // Stats is the repository state shown in the status line.
 type Stats struct {
@@ -87,10 +92,23 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 	}
 	path := CachePath(cacheDir, root)
 	st, ts := readCache(path)
-	if time.Since(ts) < TTL {
+
+	head := readHead(native)
+	// If HEAD has changed (e.g. user ran git checkout), discard the stale
+	// cached branch immediately instead of waiting for the 25s TTL.
+	if head != "" && st.Branch != "" && head != st.Branch {
+		ts = time.Time{}
+		st = Stats{Branch: head}
+	} else if st.Branch == "" && head != "" {
+		// First frame with no cache yet: populate the branch from HEAD
+		// immediately so the status line never renders a blank branch segment.
+		st.Branch = head
+	}
+
+	if !ts.IsZero() && time.Since(ts) < TTL {
 		return st
 	}
-	if sync {
+	if sync || ts.IsZero() {
 		st = Fetch(native)
 		writeCache(path, st)
 		return st
@@ -106,11 +124,11 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 func readCache(path string) (Stats, time.Time) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return Stats{}, time.Unix(0, 0)
+		return Stats{}, time.Time{}
 	}
 	fields := strings.Split(strings.TrimRight(string(b), "\r\n"), "\t")
 	if len(fields) < 7 {
-		return Stats{}, time.Unix(0, 0)
+		return Stats{}, time.Time{}
 	}
 	sec, _ := strconv.ParseInt(fields[0], 10, 64)
 	atoi := func(s string) int { n, _ := strconv.Atoi(strings.TrimSpace(s)); return n }
@@ -125,6 +143,9 @@ func readCache(path string) (Stats, time.Time) {
 }
 
 func writeCache(path string, st Stats) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
 	line := strings.Join([]string{
 		strconv.FormatInt(time.Now().Unix(), 10),
 		st.Branch,
@@ -168,6 +189,9 @@ func acquireLock(path string) bool {
 		}
 		_ = os.RemoveAll(lock)
 	}
+	if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+		return false
+	}
 	return os.Mkdir(lock, 0o755) == nil
 }
 
@@ -178,7 +202,9 @@ func releaseLock(path string) {
 // Fetch runs git and parses branch, dirty count, ahead/behind and line changes.
 func Fetch(root string) Stats {
 	var st Stats
-	out, err := exec.Command("git", "-C", root, "--no-optional-locks", "status", "--porcelain=v2", "--branch").Output()
+	statusCtx, cancelStatus := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancelStatus()
+	out, err := exec.CommandContext(statusCtx, "git", "-C", root, "--no-optional-locks", "status", "--porcelain=v2", "--branch").Output()
 	if err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
 			switch {
@@ -207,22 +233,38 @@ func Fetch(root string) Stats {
 		st.Branch = readHead(root)
 	}
 	if st.Dirty > 0 {
-		if d, err := exec.Command("git", "-C", root, "--no-optional-locks", "diff", "HEAD", "--shortstat").Output(); err == nil {
+		diffCtx, cancelDiff := context.WithTimeout(context.Background(), gitTimeout)
+		defer cancelDiff()
+		if d, err := exec.CommandContext(diffCtx, "git", "-C", root, "--no-optional-locks", "diff", "HEAD", "--shortstat").Output(); err == nil {
 			st.Add, st.Del = parseShortstat(string(d))
 		}
 	}
 	return st
 }
 
+// gitDir resolves the real .git directory, supporting gitdir: references in
+// worktrees and submodules with absolute or relative paths.
+func gitDir(root string) string {
+	gd := filepath.Join(root, ".git")
+	b, err := os.ReadFile(gd)
+	if err != nil {
+		return gd
+	}
+	s := strings.TrimSpace(string(b))
+	if strings.HasPrefix(s, "gitdir:") {
+		target := strings.TrimSpace(strings.TrimPrefix(s, "gitdir:"))
+		if filepath.IsAbs(target) {
+			return target
+		}
+		return filepath.Join(root, target)
+	}
+	return gd
+}
+
 // readHead reads .git/HEAD directly instead of spawning git again.
 func readHead(root string) string {
-	gitDir := filepath.Join(root, ".git")
-	if b, err := os.ReadFile(gitDir); err == nil {
-		if s := strings.TrimSpace(string(b)); strings.HasPrefix(s, "gitdir:") {
-			gitDir = strings.TrimSpace(strings.TrimPrefix(s, "gitdir:"))
-		}
-	}
-	b, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	gd := gitDir(root)
+	b, err := os.ReadFile(filepath.Join(gd, "HEAD"))
 	if err != nil {
 		return ""
 	}

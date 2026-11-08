@@ -50,9 +50,17 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 	}
 	probeW, src := widthsource.Resolve(jsonWidth(p, a.Name()), envWidth)
 
+	var cacheDir string
+	getCacheDir := func() string {
+		if cacheDir == "" {
+			cacheDir = CacheDir()
+		}
+		return cacheDir
+	}
+
 	var git render.Git
 	if root, native := gitstats.Locate(f.Dir); root != "" {
-		st := gitstats.Load(CacheDir(), root, native, os.Getenv("STATUSLINE_TESTING") == "1")
+		st := gitstats.Load(getCacheDir(), root, native, os.Getenv("STATUSLINE_TESTING") == "1")
 		git = render.Git{Branch: st.Branch, Dirty: st.Dirty, Ahead: st.Ahead, Behind: st.Behind, Add: st.Add, Del: st.Del}
 	}
 
@@ -60,8 +68,8 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 	// detached worker and this frame renders the previous value immediately.
 	var bstate billing.State
 	bill := render.Billing{}
-	if !billing.Disabled() {
-		bstate = billing.Load(CacheDir(), a.Name())
+	if !billing.Disabled() && len(billing.SourcesFor(a.Name())) > 0 {
+		bstate = billing.Load(getCacheDir(), a.Name())
 		bill = render.Billing{
 			Label:    bstate.Label,
 			Text:     bstate.Amount,
@@ -121,7 +129,8 @@ func jsonWidth(p *agent.Payload, name string) int64 {
 }
 
 // CacheDir returns the shared cache directory (AI_CACHE_HOME wins), matching
-// the shell implementation.
+// the shell implementation. Directory creation is deferred to cache writers
+// so read-only frames avoid redundant filesystem metadata calls.
 func CacheDir() string {
 	root := os.Getenv("AI_CACHE_HOME")
 	if root == "" {
@@ -131,9 +140,7 @@ func CacheDir() string {
 		}
 		root = filepath.Join(pathx.Native(home), ".cache")
 	}
-	dir := filepath.Join(root, "statusline")
-	_ = os.MkdirAll(dir, 0o755)
-	return dir
+	return filepath.Join(root, "statusline")
 }
 
 // HasError reports whether the payload says an error just happened, which

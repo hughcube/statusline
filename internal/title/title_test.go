@@ -99,10 +99,85 @@ func TestScanTranscriptStreamsFirstLines(t *testing.T) {
 }
 
 func TestCacheDirUsesHomeDir(t *testing.T) {
+	t.Setenv("AI_CACHE_HOME", "")
 	t.Setenv("USERPROFILE", "C:/fixture/home")
 	t.Setenv("HOME", "C:/fixture/home")
 	got := filepath.ToSlash(CacheDir())
-	if want := "C:/fixture/home/.gemini/.statusline-cache"; got != want {
+	if want := "C:/fixture/home/.cache/statusline/title"; got != want {
 		t.Errorf("CacheDir = %q, want %q", got, want)
+	}
+}
+
+func TestRenderIgnoresUUIDAndExtractsTranscript(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("AI_CACHE_HOME", cacheDir)
+
+	sid := "96efab6b-64f5-4101-a8d4-4683d4b2dd03"
+	transcriptDir := t.TempDir()
+	transcriptPath := filepath.Join(transcriptDir, "transcript.jsonl")
+	os.WriteFile(transcriptPath, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"<USER_REQUEST>\\n修复状态栏标题与账单\\n</USER_REQUEST>\"}\n",
+	), 0o644)
+
+	f := &agent.Fields{
+		Session:        sid,
+		SessionID:      sid,
+		Dir:            "C:/fixture/project",
+		State:          "idle",
+		TranscriptPath: transcriptPath,
+	}
+
+	got := Render(f)
+	want := "❇️ 修复状态栏标题与账单 [project]"
+	if got != want {
+		t.Fatalf("Render with UUID session = %q, want %q", got, want)
+	}
+
+	// Next render should hit the unified title cache directly even without transcript
+	f.TranscriptPath = filepath.Join(transcriptDir, "non-existent.jsonl")
+	gotCached := Render(f)
+	if gotCached != want {
+		t.Fatalf("Render cached = %q, want %q", gotCached, want)
+	}
+}
+
+func TestRenderUUIDWithoutTranscriptFallsBackToProject(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("AI_CACHE_HOME", cacheDir)
+
+	sid := "96efab6b-64f5-4101-a8d4-4683d4b2dd03"
+	f := &agent.Fields{
+		Session:        sid,
+		SessionID:      sid,
+		Dir:            "C:/fixture/project",
+		State:          "idle",
+		TranscriptPath: filepath.Join(t.TempDir(), "empty.jsonl"),
+	}
+
+	got := Render(f)
+	want := "❇️ [project]"
+	if got != want {
+		t.Fatalf("Render fallback = %q, want %q", got, want)
+	}
+}
+
+func TestIsSessionIDAndUUID(t *testing.T) {
+	cases := []struct {
+		s    string
+		sid  string
+		want bool
+	}{
+		{"", "123", true},
+		{"a6b09b9d-b1d8-4662-b6ca-453e71c1b4d5", "", true},
+		{"a6b09b9d-b1d8-4662-b6ca-453e71c1b4d5", "a6b09b9d-b1d8-4662-b6ca-453e71c1b4d5", true},
+		{"0123456789abcdef0123456789abcdef", "", true},
+		{"a6b09b9d", "a6b09b9d-b1d8-4662-b6ca-453e71c1b4d5", true},
+		{"My Session Title", "a6b09b9d-b1d8-4662-b6ca-453e71c1b4d5", false},
+		{"项目排查", "", false},
+	}
+	for _, c := range cases {
+		if got := isSessionID(c.s, c.sid); got != c.want {
+			t.Errorf("isSessionID(%q, %q) = %v, want %v", c.s, c.sid, got, c.want)
+		}
 	}
 }

@@ -238,9 +238,10 @@ func CachePath(cacheDir string, src agent.BillingSource) string {
 	return filepath.Join(cacheDir, cacheSubdir, entryName(src))
 }
 
-// Load returns the cached snapshot for the first discoverable credential and
-// schedules a detached refresh when it is stale. It never blocks on the
-// network and never returns an error to the caller.
+// Load returns the cached snapshot for the first discoverable credential. If
+// no cache exists yet, it fetches synchronously once so the status bar renders
+// balance immediately on the very first frame. When a valid cache exists,
+// expired entries are refreshed via a detached background worker.
 func Load(cacheDir, agentName string) State {
 	if Disabled() {
 		return State{}
@@ -253,7 +254,13 @@ func Load(cacheDir, agentName string) State {
 	path := CachePath(cacheDir, src)
 	e := readEntry(path)
 	now := time.Now()
-	if shouldRefresh(e, now, ttl) && acquireLock(path) {
+	if e.lastOK.IsZero() && shouldRefresh(e, now, ttl) {
+		if acquireLock(path) {
+			CacheWorker(agentName, path)
+			e = readEntry(path)
+			now = time.Now()
+		}
+	} else if shouldRefresh(e, now, ttl) && acquireLock(path) {
 		spawnWorker(agentName, path)
 	}
 	return stateFrom(e, src, now, ttl)

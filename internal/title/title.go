@@ -25,10 +25,14 @@ const MaxTitleCols = 28
 // hammer the disk.
 const negativeTTL = 5 * time.Second
 
-// CacheDir returns the title cache directory, kept identical to the legacy
-// implementation so upgrades are seamless.
+// CacheDir returns the title cache directory, unified under ~/.cache/statusline/title.
 func CacheDir() string {
-	return filepath.Join(render.HomeDir(), ".gemini", ".statusline-cache")
+	root := os.Getenv("AI_CACHE_HOME")
+	if root == "" {
+		home := render.HomeDir()
+		root = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(root, "statusline", "title")
 }
 
 // Render builds the title text.
@@ -39,7 +43,7 @@ func Render(f *agent.Fields) string {
 	}
 
 	sessionTitle := ""
-	if s := clean(f.Session); s != "" {
+	if s := clean(f.Session); s != "" && !isSessionID(s, f.SessionID) {
 		sessionTitle = render.TruncHead(s, MaxTitleCols)
 	}
 	if sessionTitle == "" {
@@ -54,6 +58,42 @@ func Render(f *agent.Fields) string {
 		return fmt.Sprintf("%s %s [%s]", status, sessionTitle, project)
 	}
 	return fmt.Sprintf("%s [%s]", status, project)
+}
+
+// isSessionID reports whether s is a raw machine session/conversation identifier
+// (e.g. UUID or matching SessionID) rather than a human-readable title.
+func isSessionID(s, sessionID string) bool {
+	if s == "" {
+		return true
+	}
+	if sessionID != "" && (s == sessionID || strings.HasPrefix(sessionID, s)) {
+		return true
+	}
+	return isUUID(s)
+}
+
+// isUUID checks whether s matches the standard 36-char or 32-char hex UUID format.
+func isUUID(s string) bool {
+	if len(s) == 36 && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-' {
+		for i, r := range s {
+			if i == 8 || i == 13 || i == 18 || i == 23 {
+				continue
+			}
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(s) == 32 {
+		for _, r := range s {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // glyph maps agent_state to an icon. working/thinking animate by the clock.
@@ -125,8 +165,11 @@ func fromTranscript(f *agent.Fields) string {
 
 	path := f.TranscriptPath
 	if path == "" {
-		path = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli", "brain",
-			f.SessionID, ".system_generated", "logs", "transcript.jsonl")
+		base := os.Getenv("AI_APP_DATA_DIR")
+		if base == "" {
+			base = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli")
+		}
+		path = filepath.Join(base, "brain", f.SessionID, ".system_generated", "logs", "transcript.jsonl")
 	}
 	if _, err := os.Stat(path); err != nil {
 		return ""
@@ -174,19 +217,34 @@ func scanTranscript(path string) string {
 	return ""
 }
 
-// matchRequestLine extracts the <USER_REQUEST> body from one transcript line.
+// matchRequestLine extracts the user request body from one transcript line.
 func matchRequestLine(line string) string {
-	if !strings.Contains(line, "\"type\":\"USER_INPUT\"") || !strings.Contains(line, "<USER_REQUEST>") {
+	if !strings.Contains(line, "\"type\":\"USER_INPUT\"") {
 		return ""
 	}
-	start := strings.Index(line, "<USER_REQUEST>") + len("<USER_REQUEST>")
-	rest := line[start:]
-	if end := strings.Index(rest, "</USER_REQUEST>"); end >= 0 {
-		rest = rest[:end]
+	if strings.Contains(line, "<USER_REQUEST>") {
+		start := strings.Index(line, "<USER_REQUEST>") + len("<USER_REQUEST>")
+		rest := line[start:]
+		if end := strings.Index(rest, "</USER_REQUEST>"); end >= 0 {
+			rest = rest[:end]
+		}
+		text := clean(rest)
+		if text != "" {
+			return render.TruncHead(text, MaxTitleCols)
+		}
 	}
-	text := clean(rest)
-	if text == "" {
-		return ""
+	for _, key := range []string{"\"content\":\"", "\"text\":\""} {
+		if idx := strings.Index(line, key); idx >= 0 {
+			start := idx + len(key)
+			rest := line[start:]
+			if end := strings.Index(rest, "\""); end >= 0 {
+				rest = rest[:end]
+			}
+			text := clean(rest)
+			if text != "" {
+				return render.TruncHead(text, MaxTitleCols)
+			}
+		}
 	}
-	return render.TruncHead(text, MaxTitleCols)
+	return ""
 }
