@@ -266,21 +266,24 @@ func Load(cacheDir, agentName string) State {
 	return stateFrom(e, src, now, ttl)
 }
 
-// shouldRefresh decides whether this frame may start a worker. The decision is
-// based on lastAttempt, not lastOK, so a failure backs off for errorRetry.
+// shouldRefresh decides whether this frame may start a worker.
+// To keep balance fresh without blocking, an async refresh is scheduled
+// as soon as half the TTL has elapsed (soft expiry / early refresh).
+// Failures back off for errorRetry (60s) to avoid spamming the endpoint.
 func shouldRefresh(e entry, now time.Time, ttl time.Duration) bool {
 	if e.lastAttempt.IsZero() {
 		return true
 	}
-	wait := ttl
+	wait := ttl / 2
 	if e.status == statusErr {
 		wait = errorRetry
 	}
 	return now.Sub(e.lastAttempt) >= wait
 }
 
-// stateFrom turns a cache entry into renderable state. Recent-but-expired
-// values are shown with a stale marker; very old values are hidden.
+// stateFrom turns a cache entry into renderable state.
+// Even if expired or offline, the cached value is always rendered so the status
+// bar never suddenly blanks out, with Stale marked when beyond staleAfter(ttl).
 func stateFrom(e entry, src agent.BillingSource, now time.Time, ttl time.Duration) State {
 	st := State{
 		Provider:  src.Provider,
@@ -293,9 +296,6 @@ func stateFrom(e entry, src agent.BillingSource, now time.Time, ttl time.Duratio
 		return st
 	}
 	age := now.Sub(e.lastOK)
-	if age > maxAge(ttl) {
-		return st
-	}
 	if src.Provider == providerCodeBuddy {
 		c, ok := parseCredits(e.response, now)
 		if !ok {

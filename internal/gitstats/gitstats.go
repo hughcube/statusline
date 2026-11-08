@@ -24,8 +24,9 @@ import (
 )
 
 // TTL is the cache lifetime; stale entries are still rendered while a refresh
-// runs in the background.
-const TTL = 25 * time.Second
+// runs in the background. With SWR, 5s provides prompt awareness of changes
+// while keeping execution entirely non-blocking.
+const TTL = 5 * time.Second
 
 // lockTTL bounds how long a refresh may hold the lock before another frame may
 // steal it.
@@ -95,7 +96,7 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 
 	head := readHead(native)
 	// If HEAD has changed (e.g. user ran git checkout), discard the stale
-	// cached branch immediately instead of waiting for the 25s TTL.
+	// cached branch immediately instead of waiting for the TTL.
 	if head != "" && st.Branch != "" && head != st.Branch {
 		ts = time.Time{}
 		st = Stats{Branch: head}

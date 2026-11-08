@@ -35,6 +35,29 @@ func CacheDir() string {
 	return filepath.Join(root, "statusline", "title")
 }
 
+// Resolve returns the human-readable session title for f. It checks in order:
+// 1. f.Session (if human-authored and not a raw machine ID/UUID)
+// 2. the shared title cache (~/.cache/statusline/title/title_<sid>)
+// 3. transcript scan for the first user request
+// The status bar and window title share this single source of truth and cache.
+func Resolve(f *agent.Fields) string {
+	if f == nil {
+		return ""
+	}
+	if s := clean(f.Session); s != "" && !IsSessionID(s, f.SessionID) {
+		return s
+	}
+	if f.SessionID != "" {
+		if t := fromCache(f.SessionID); t != "" {
+			return t
+		}
+		if t := fromTranscript(f); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // Render builds the title text.
 func Render(f *agent.Fields) string {
 	project := render.BaseName(f.Dir)
@@ -43,14 +66,8 @@ func Render(f *agent.Fields) string {
 	}
 
 	sessionTitle := ""
-	if s := clean(f.Session); s != "" && !isSessionID(s, f.SessionID) {
-		sessionTitle = render.TruncHead(s, MaxTitleCols)
-	}
-	if sessionTitle == "" {
-		sessionTitle = fromCache(f.SessionID)
-	}
-	if sessionTitle == "" {
-		sessionTitle = fromTranscript(f)
+	if t := Resolve(f); t != "" {
+		sessionTitle = render.TruncHead(t, MaxTitleCols)
 	}
 
 	status := glyph(f.State, f.IsError)
@@ -60,9 +77,9 @@ func Render(f *agent.Fields) string {
 	return fmt.Sprintf("%s [%s]", status, project)
 }
 
-// isSessionID reports whether s is a raw machine session/conversation identifier
+// IsSessionID reports whether s is a raw machine session/conversation identifier
 // (e.g. UUID or matching SessionID) rather than a human-readable title.
-func isSessionID(s, sessionID string) bool {
+func IsSessionID(s, sessionID string) bool {
 	if s == "" {
 		return true
 	}

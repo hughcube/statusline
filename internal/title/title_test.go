@@ -176,8 +176,8 @@ func TestIsSessionIDAndUUID(t *testing.T) {
 		{"项目排查", "", false},
 	}
 	for _, c := range cases {
-		if got := isSessionID(c.s, c.sid); got != c.want {
-			t.Errorf("isSessionID(%q, %q) = %v, want %v", c.s, c.sid, got, c.want)
+		if got := IsSessionID(c.s, c.sid); got != c.want {
+			t.Errorf("IsSessionID(%q, %q) = %v, want %v", c.s, c.sid, got, c.want)
 		}
 	}
 }

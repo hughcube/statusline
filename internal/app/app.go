@@ -44,6 +44,15 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 		f.MCPEnabled, _ = mcpcfg.Count(a.Name(), f.Dir)
 	}
 
+	// Share the unified title cache with the status bar: if f.Session is a raw
+	// machine ID/UUID, resolve it via title package so line 1 renders the real
+	// user request while sharing the exact same cache file.
+	if title.IsSessionID(f.Session, f.SessionID) {
+		if t := title.Resolve(f); t != "" {
+			f.Session = t
+		}
+	}
+
 	envWidth := ""
 	if widthOverride > 20 {
 		envWidth = strconv.Itoa(widthOverride)

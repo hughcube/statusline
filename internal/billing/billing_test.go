@@ -187,7 +187,7 @@ func TestStateFrom(t *testing.T) {
 	}{
 		{"fresh", now.Add(-10 * time.Second), statusOK, true, "¥10.26", false},
 		{"stale after 2 TTL", now.Add(-121 * time.Second), statusOK, true, "¥10.26", true},
-		{"hidden after 2h", now.Add(-3 * time.Hour), statusOK, true, "", false},
+		{"expired beyond 2h still rendered", now.Add(-3 * time.Hour), statusOK, true, "¥10.26", true},
 		{"last attempt failed", now.Add(-10 * time.Second), statusErr, true, "¥10.26", true},
 		{"unavailable", now.Add(-10 * time.Second), statusOK, false, "¥10.26!", false},
 		{"never fetched", time.Time{}, "", true, "", false},
@@ -230,7 +230,8 @@ func TestShouldRefresh(t *testing.T) {
 		want  bool
 	}{
 		{"never attempted", entry{}, true},
-		{"ok, within TTL", entry{lastAttempt: now.Add(-10 * time.Second), status: statusOK}, false},
+		{"ok, within half TTL", entry{lastAttempt: now.Add(-10 * time.Second), status: statusOK}, false},
+		{"ok, past half TTL", entry{lastAttempt: now.Add(-35 * time.Second), status: statusOK}, true},
 		{"ok, expired", entry{lastAttempt: now.Add(-61 * time.Second), status: statusOK}, true},
 		{"err, within backoff", entry{lastAttempt: now.Add(-30 * time.Second), status: statusErr}, false},
 		{"err, backoff expired", entry{lastAttempt: now.Add(-61 * time.Second), status: statusErr}, true},
