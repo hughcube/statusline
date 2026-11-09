@@ -51,6 +51,12 @@ func TestEffectiveTTL(t *testing.T) {
 		if got := effectiveTTL(); got != c.want {
 			t.Errorf("TTL(%q) = %v, want %v", c.raw, got, c.want)
 		}
+		if got := effectiveTTLFor(providerDeepSeek); got != c.want {
+			t.Errorf("effectiveTTLFor(deepseek, %q) = %v, want %v", c.raw, got, c.want)
+		}
+		if got := effectiveTTLFor(providerCodeBuddy); got != c.want {
+			t.Errorf("effectiveTTLFor(codebuddy, %q) = %v, want %v", c.raw, got, c.want)
+		}
 	}
 }
 
