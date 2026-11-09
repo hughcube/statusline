@@ -52,14 +52,10 @@ const (
 	cacheSuffix  = ".json"
 	cacheVersion = 1
 
-	// defaultTTL is the healthy refresh interval. Balance moves slowly, but the
-	// user asked for a one-minute default after confirming the endpoint is not
-	// billed; STATUSLINE_BILLING_TTL overrides it in seconds.
+	// defaultTTL is the healthy refresh interval for both DeepSeek and CodeBuddy
+	// (60s TTL, half-TTL soft refresh triggers asynchronously every 30s).
+	// STATUSLINE_BILLING_TTL overrides it in seconds for all providers.
 	defaultTTL = 60 * time.Second
-	// creditsTTL applies to the CodeBuddy pool: the gateway answers in ~0.7 s
-	// and the pool moves slower than a cash balance, so two minutes keeps the
-	// bar quiet without looking frozen.
-	creditsTTL = 120 * time.Second
 	// minTTL prevents a typo from turning the bar into a request loop.
 	minTTL = 30 * time.Second
 	// errorRetry is the backoff after a failed refresh; it prevents a network
@@ -145,15 +141,10 @@ func effectiveTTL() time.Duration {
 	return d
 }
 
-// effectiveTTLFor picks the provider default while keeping the single
-// STATUSLINE_BILLING_TTL override authoritative for both providers.
+// effectiveTTLFor returns the effective TTL for the provider. Both DeepSeek and
+// CodeBuddy default to defaultTTL (60s), and STATUSLINE_BILLING_TTL overrides
+// them universally.
 func effectiveTTLFor(provider string) time.Duration {
-	if strings.TrimSpace(os.Getenv("STATUSLINE_BILLING_TTL")) != "" {
-		return effectiveTTL()
-	}
-	if provider == providerCodeBuddy {
-		return creditsTTL
-	}
 	return effectiveTTL()
 }
 
