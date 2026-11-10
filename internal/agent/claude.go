@@ -21,7 +21,7 @@ func (Claude) Detect(p *Payload) bool {
 	if p.Str("product") == "antigravity" {
 		return false
 	}
-	if p.Get("quota") != nil {
+	if q, ok := p.Get("quota").(map[string]any); ok && len(q) > 0 {
 		return false
 	}
 	return p.Get("workspace") != nil || p.Get("cwd") != nil || p.Get("model") != nil || p.Get("rate_limits") != nil
@@ -45,7 +45,13 @@ func (Claude) Parse(p *Payload) *Fields {
 	}
 
 	f.InTokens = p.Int("context_window", "total_input_tokens")
+	if f.InTokens == 0 {
+		f.InTokens = p.IntAny([]string{"context_window", "input_tokens"}, []string{"input_tokens"})
+	}
 	f.OutTokens = p.Int("context_window", "total_output_tokens")
+	if f.OutTokens == 0 {
+		f.OutTokens = p.IntAny([]string{"context_window", "output_tokens"}, []string{"output_tokens"})
+	}
 	f.CacheRead = p.Int("context_window", "current_usage", "cache_read_input_tokens")
 	if f.CacheRead == 0 {
 		f.CacheRead = p.Int("context_window", "cache_read_input_tokens")
@@ -57,6 +63,19 @@ func (Claude) Parse(p *Payload) *Fields {
 	f.CtxSize = p.Int("context_window", "context_window_size")
 
 	f.Effort = p.Str("effort", "level")
+	if f.Effort == "" {
+		f.Effort = p.Str("model", "effort")
+	}
+	if on, ok := p.Bool("thinking", "enabled"); ok {
+		if on {
+			f.Think = "think"
+		} else {
+			f.Think = "no-think"
+		}
+	}
+	if v, ok := p.Bool("fast_mode"); ok {
+		f.Fast = v
+	}
 	f.CostUSD, _ = p.Float("cost", "total_cost_usd")
 	f.DurMS = p.Int("cost", "total_duration_ms")
 

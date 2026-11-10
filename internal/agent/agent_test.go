@@ -136,3 +136,75 @@ func TestAntigravityFallbackIgnoresRawUUID(t *testing.T) {
 		t.Fatalf("Session should be empty when no title and session_name is UUID, got %q", f.Session)
 	}
 }
+
+func TestAntigravityCacheReadCurrentUsage(t *testing.T) {
+	payload := []byte(`{
+		"product": "antigravity",
+		"session_id": "test-sid",
+		"context_window": {
+			"total_input_tokens": 63187,
+			"total_output_tokens": 115449,
+			"context_window_size": 1048576,
+			"current_usage": {
+				"input_tokens": 3215,
+				"output_tokens": 969,
+				"cache_creation_input_tokens": 120,
+				"cache_read_input_tokens": 64709
+			}
+		}
+	}`)
+	p := Parse(payload)
+	f := Antigravity{}.Parse(p)
+	if f.InTokens != 63187 {
+		t.Fatalf("InTokens = %d, want 63187", f.InTokens)
+	}
+	if f.OutTokens != 115449 {
+		t.Fatalf("OutTokens = %d, want 115449", f.OutTokens)
+	}
+	if f.CacheRead != 64709 {
+		t.Fatalf("CacheRead = %d, want 64709", f.CacheRead)
+	}
+	if f.CacheCreate != 120 {
+		t.Fatalf("CacheCreate = %d, want 120", f.CacheCreate)
+	}
+}
+
+func TestClaudeDetectWithEmptyQuota(t *testing.T) {
+	payload := []byte(`{
+		"workspace": {"current_dir": "/path/to/project"},
+		"model": {"display_name": "Claude 3.7 Sonnet"},
+		"quota": {}
+	}`)
+	p := Parse(payload)
+	a := Detect(p)
+	if a.Name() != "claude" {
+		t.Fatalf("Detect with empty quota = %s, want claude", a.Name())
+	}
+}
+
+func TestClaudeTokensFallbackAndThinking(t *testing.T) {
+	payload := []byte(`{
+		"workspace": {"current_dir": "/path/to/project"},
+		"model": {"display_name": "Claude 3.7 Sonnet"},
+		"context_window": {
+			"input_tokens": 1234,
+			"output_tokens": 567
+		},
+		"thinking": {"enabled": true},
+		"fast_mode": true
+	}`)
+	p := Parse(payload)
+	f := Claude{}.Parse(p)
+	if f.InTokens != 1234 {
+		t.Fatalf("InTokens = %d, want 1234", f.InTokens)
+	}
+	if f.OutTokens != 567 {
+		t.Fatalf("OutTokens = %d, want 567", f.OutTokens)
+	}
+	if f.Think != "think" {
+		t.Fatalf("Think = %s, want think", f.Think)
+	}
+	if !f.Fast {
+		t.Fatalf("Fast = false, want true")
+	}
+}
