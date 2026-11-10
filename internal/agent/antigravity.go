@@ -61,8 +61,14 @@ func (Antigravity) Parse(p *Payload) *Fields {
 
 	f.InTokens = p.Int("context_window", "total_input_tokens")
 	f.OutTokens = p.Int("context_window", "total_output_tokens")
-	f.CacheRead = p.Int("context_window", "cache_read_input_tokens")
-	f.CacheCreate = p.Int("context_window", "cache_creation_input_tokens")
+	f.CacheRead = p.Int("context_window", "current_usage", "cache_read_input_tokens")
+	if f.CacheRead == 0 {
+		f.CacheRead = p.Int("context_window", "cache_read_input_tokens")
+	}
+	f.CacheCreate = p.Int("context_window", "current_usage", "cache_creation_input_tokens")
+	if f.CacheCreate == 0 {
+		f.CacheCreate = p.Int("context_window", "cache_creation_input_tokens")
+	}
 	f.CtxSize = p.Int("context_window", "context_window_size")
 
 	f.Effort = p.Str("effort", "level")
