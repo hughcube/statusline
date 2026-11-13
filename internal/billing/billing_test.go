@@ -236,8 +236,8 @@ func TestShouldRefresh(t *testing.T) {
 		want  bool
 	}{
 		{"never attempted", entry{}, true},
-		{"ok, within half TTL", entry{lastAttempt: now.Add(-10 * time.Second), status: statusOK}, false},
-		{"ok, past half TTL", entry{lastAttempt: now.Add(-35 * time.Second), status: statusOK}, true},
+		{"ok, within TTL", entry{lastAttempt: now.Add(-10 * time.Second), status: statusOK}, false},
+		{"ok, past half TTL but within TTL", entry{lastAttempt: now.Add(-35 * time.Second), status: statusOK}, false},
 		{"ok, expired", entry{lastAttempt: now.Add(-61 * time.Second), status: statusOK}, true},
 		{"err, within backoff", entry{lastAttempt: now.Add(-30 * time.Second), status: statusErr}, false},
 		{"err, backoff expired", entry{lastAttempt: now.Add(-61 * time.Second), status: statusErr}, true},
