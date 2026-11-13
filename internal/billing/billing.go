@@ -253,14 +253,20 @@ func Load(cacheDir, agentName string) State {
 }
 
 // shouldRefresh decides whether this frame may start a worker.
-// To keep balance fresh without blocking, an async refresh is scheduled
-// as soon as half the TTL has elapsed (soft expiry / early refresh).
+//
+// A refresh is armed only once the full TTL has elapsed, never at half of it.
+// Arming at half the TTL doubled the number of worker spawns, and each spawn is
+// a fresh copy of this binary: on a saturated machine (hook storms, real-time
+// scanning) that competes with the frame the host is timing against its hard
+// 5s status-line budget. Freshness at TTL granularity is worth more than
+// halving the refresh interval.
+//
 // Failures back off for errorRetry (60s) to avoid spamming the endpoint.
 func shouldRefresh(e entry, now time.Time, ttl time.Duration) bool {
 	if e.lastAttempt.IsZero() {
 		return true
 	}
-	wait := ttl / 2
+	wait := ttl
 	if e.status == statusErr {
 		wait = errorRetry
 	}

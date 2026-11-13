@@ -41,7 +41,9 @@ func BarWith(raw []byte, agentName string, widthOverride int, mcpEnabled bool) B
 	a := agent.Resolve(agentName, p)
 	f := a.Parse(p)
 	if mcpEnabled {
-		f.MCPEnabled, _ = mcpcfg.Count(a.Name(), f.Dir)
+		// CountCached keeps this to a single small file read per frame; the
+		// count path alone was ~17ms of the host's 5s status-line budget.
+		f.MCPEnabled, _ = mcpcfg.CountCached(CacheDir(), a.Name(), f.Dir)
 	}
 
 	// Share the unified title cache with the status bar: if f.Session is a raw

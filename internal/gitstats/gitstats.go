@@ -25,9 +25,11 @@ import (
 )
 
 // TTL is the cache lifetime; stale entries are still rendered while a refresh
-// runs in the background. With SWR, 20s provides responsive git stats
-// while keeping execution entirely non-blocking and minimising worker forks.
-const TTL = 20 * time.Second
+// runs in the background. With SWR, 60s keeps the branch/dirty segment
+// responsive enough while cutting worker forks to a third: every arm spawns a
+// fresh copy of this binary plus two git invocations, and those land on the same
+// machine the host is timing against its hard 5s status-line budget.
+const TTL = 60 * time.Second
 
 // lockTTL bounds how long a refresh may hold the lock before another frame may
 // steal it.
