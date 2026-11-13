@@ -19,6 +19,14 @@ import (
 // parity is enforced without needing bash. Point the variable at the old
 // script when you want to prove the goldens themselves are still faithful
 // (e.g. before re-baselining).
+// knownDivergences lists frames where the legacy implementation drew a line
+// wider than its own container. The Go renderer now fits the line instead of
+// copying that overflow, so parity is expected to differ until the legacy
+// oracle is retired.
+var knownDivergences = map[string]string{
+	"p_wt/80": "legacy drew 77 columns into a 76 column container",
+}
+
 func TestParityWithLegacy(t *testing.T) {
 	script := strings.TrimSpace(os.Getenv("STATUSLINE_LEGACY"))
 	if script == "" {
@@ -43,6 +51,9 @@ func TestParityWithLegacy(t *testing.T) {
 		for _, width := range []int{80, 120, 157, 200} {
 			width := width
 			t.Run(fmt.Sprintf("%s/%d", name, width), func(t *testing.T) {
+				if why, ok := knownDivergences[fmt.Sprintf("%s/%d", name, width)]; ok {
+					t.Skipf("known divergence from the legacy oracle: %s", why)
+				}
 				cmd := exec.Command("bash", script)
 				cmd.Stdin = bytes.NewReader(raw)
 				cmd.Env = append(os.Environ(),

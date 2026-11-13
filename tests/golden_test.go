@@ -57,9 +57,17 @@ func TestGoldenBars(t *testing.T) {
 					t.Fatalf("cannot read golden: %v", err)
 				}
 				got := app.Bar(raw, "auto", width).Output + "\n"
-				if got != string(want) {
-					t.Errorf("output differs from golden\n--- got ---\n%q\n--- want ---\n%q", got, string(want))
+				if got == string(want) {
+					return
 				}
+				if *update {
+					if err := os.WriteFile(goldenPath, []byte(got), 0o644); err != nil {
+						t.Fatalf("cannot rewrite golden: %v", err)
+					}
+					t.Logf("rewrote %s", goldenPath)
+					return
+				}
+				t.Errorf("output differs from golden\n--- got ---\n%q\n--- want ---\n%q", got, string(want))
 			})
 		}
 	}

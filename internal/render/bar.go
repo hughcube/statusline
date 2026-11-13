@@ -74,55 +74,59 @@ func BuildWith(f *agent.Fields, client string, probeW int, git Git, bill Billing
 		wt = 20
 	}
 
-	l1r := contextSeg(f) + " | " + perfSeg(f)
-	rw := SegWidth(l1r)
-
-	gitSeg := gitSegment(git, f.Worktree)
-	gw := SegWidth(gitSeg)
-
-	dirmax := wt - rw - gw - 1
-	if dirmax < 3 {
-		dirmax = 3
-	}
-
 	disp := OneLine(DisplayPath(f.Dir, HomeDir()))
-	var l1l string
-	if st.ByteLimit > 0 {
-		bdirmax := st.ByteLimit - ByteWidth(l1r) - ByteWidth(gitSeg) - 1
-		if bdirmax < 3 {
-			bdirmax = 3
-		}
-		if bdirmax < dirmax {
-			dirmax = bdirmax
-		}
-		l1l = TruncTailDual(disp, dirmax, bdirmax)
-	} else {
-		l1l = TruncTail(disp, dirmax)
-	}
-	l1l += gitSeg
+	gitSeg := gitSegment(git, f.Worktree)
+	ctx := contextSeg(f)
 
-	lw := SegWidth(l1l)
-	if sn := sessionLabel(f); sn != "" {
-		budget := wt - lw - rw - 3
-		if budget >= 6 {
-			if st.ByteLimit > 0 {
-				bsn := st.ByteLimit - ByteWidth(l1l) - rw - 3
-				if bsn >= 6 {
-					l1r += " | " + TruncHeadDual(sn, budget, bsn)
-					rw = SegWidth(l1r)
-				}
-			} else {
-				l1r += " | " + TruncHead(sn, budget)
-				rw = SegWidth(l1r)
+	// Line 1 is fitted, never assumed to fit. The directory used to be the only
+	// segment that shrank, so a long branch name plus the usage counters could
+	// push the line past the container; CodeBuddy then wrapped it and the status
+	// area gained a row. Each tier gives up a little more usage detail, and the
+	// last resort truncates the right side itself, so the invariant holds at any
+	// width.
+	var l1l, l1r string
+	gap := 1
+	for _, perf := range perfTiers(f) {
+		l1l, l1r, gap = layoutLine1(f, disp, gitSeg, ctx, perf, st, wt)
+		if fitsLine(l1l, l1r, gap, st, wt) {
+			break
+		}
+	}
+	// Last resort, and the guarantee behind the invariant: the path yields
+	// before the numbers do, and below roughly 25 columns the two halves simply
+	// cannot share the container — then the numbers are dropped rather than
+	// drawn past the edge.
+	if !fitsLine(l1l, l1r, gap, st, wt) {
+		if SegWidth(l1l) > wt-2 {
+			l1l = TruncTail(l1l, wt-2)
+		}
+		budget := wt - SegWidth(l1l) - 1
+		if budget < 1 {
+			budget = 1
+		}
+		if st.ByteLimit > 0 {
+			b := st.ByteLimit - ByteWidth(l1l) - 1
+			if b < 1 {
+				b = 1
 			}
+			l1r = TruncHeadDual(l1r, budget, b)
+		} else {
+			l1r = TruncHead(l1r, budget)
+		}
+		gap = wt - SegWidth(l1l) - SegWidth(l1r)
+		if gap < 1 {
+			gap = 1
 		}
 	}
-	gap := wt - lw - rw
-	if gap < 1 {
+	if !fitsLine(l1l, l1r, gap, st, wt) {
+		l1r = ""
 		gap = 1
+		if SegWidth(l1l) > wt-1 {
+			l1l = TruncTail(l1l, wt-1)
+		}
 	}
 
-	l2 := buildLine2(f, wt, bill)
+	l2 := buildLine2(f, st, wt, bill)
 	pad := wt - SegWidth(l2)
 	if pad < 0 {
 		pad = 0
@@ -161,26 +165,45 @@ func contextSeg(f *agent.Fields) string {
 	return fmt.Sprintf("%s(%d%%)", FmtTokens(used), pct)
 }
 
-// perfSeg renders In/Out[/Cache][/$cost][/duration].
-func perfSeg(f *agent.Fields) string {
+// perfSeg renders In/Out[/Cache][/CacheWrite][/$cost][/duration].
+func perfSeg(f *agent.Fields) string { return perfSegAt(f, 0) }
+
+// perfSegAt renders the usage segment with an explicit drop level. Higher
+// levels give up the tail first: duration and cost are the values a reader can
+// also find elsewhere, the cache counters next; the token pair never goes.
+func perfSegAt(f *agent.Fields, lvl int) string {
 	parts := []string{"In:" + FmtTokens(f.InTokens) + " Out:" + FmtTokens(f.OutTokens)}
-	if f.CacheRead > 0 {
+	if lvl <= 4 && f.CacheRead > 0 {
 		parts[0] += " Cache:" + FmtTokens(f.CacheRead)
 	}
-	if f.CacheCreate > 0 {
+	if lvl <= 3 && f.CacheCreate > 0 {
 		parts[0] += " CacheWrite:" + FmtTokens(f.CacheCreate)
 	}
-	if f.CostUSD > 0 {
+	if lvl <= 2 && f.CostUSD > 0 {
 		// Format first, then drop the value: a sub-cent cost must not render as
 		// "$0.00" (the legacy implementation did the same check after formatting).
 		if cn := fmt.Sprintf("%.2f", f.CostUSD); cn != "0.00" {
 			parts = append(parts, "$"+cn)
 		}
 	}
-	if f.DurMS > 0 {
+	if lvl <= 1 && f.DurMS > 0 {
 		parts = append(parts, FmtDuration(f.DurMS))
 	}
 	return strings.Join(parts, " ")
+}
+
+// perfTiers lists the usage segment from richest to plainest, without
+// duplicates, so the fit loop never tries the same string twice.
+func perfTiers(f *agent.Fields) []string {
+	out := make([]string, 0, 6)
+	for lvl := 0; lvl <= 5; lvl++ {
+		s := perfSegAt(f, lvl)
+		if len(out) > 0 && out[len(out)-1] == s {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // gitSegment renders " branch *3/^2/v1/+9/-4 wt:name".
@@ -237,15 +260,115 @@ func sessionLabel(f *agent.Fields) string {
 	return OneLine(BaseName(f.Dir))
 }
 
-// buildLine2 degrades progressively: level 0 is the richest, level 4 is model only.
-func buildLine2(f *agent.Fields, wt int, bill Billing) string {
+// fitsLine reports whether the line holds in both budgets.
+//
+// Columns are measured on the whole line: the terminal wraps at the container
+// width, so the gap counts. The byte budget measures content only — left plus
+// right, not the padding between them — which is the contract this renderer has
+// always used for CodeBuddy: a non-ASCII rune costs three bytes where it
+// occupies two columns, and that inflation belongs to the text, not to the
+// spaces that push the right block flush.
+func fitsLine(left, right string, gap int, st Style, wt int) bool {
+	if SegWidth(left)+gap+SegWidth(right) > wt {
+		return false
+	}
+	if st.ByteLimit > 0 && ByteWidth(left)+ByteWidth(right) > st.ByteLimit {
+		return false
+	}
+	return true
+}
+
+// layoutLine1 assembles the left (directory + git) and right (usage + session)
+// halves for one usage tier.
+//
+// The directory is truncated from the tail and the git segment from the head:
+// the branch name is the part worth keeping. The git segment yields before the
+// directory does, but only down to three columns, below which it is dropped so
+// the path survives. The session name only takes what is genuinely left over,
+// which is what stops a long auto-derived title from pushing the line out.
+func layoutLine1(f *agent.Fields, disp, gitSeg, ctx, perf string, st Style, wt int) (left, right string, gap int) {
+	right = ctx + " | " + perf
+
+	// One column for the gap, three for the directory.
+	avail := wt - SegWidth(right) - 4
+	bavail := 0
+	if st.ByteLimit > 0 {
+		bavail = st.ByteLimit - ByteWidth(right) - 4
+	}
+	gs := gitSeg
+	if gs != "" {
+		switch {
+		case st.ByteLimit > 0 && (SegWidth(gs) > avail || ByteWidth(gs) > bavail):
+			if avail < 3 || bavail < 3 {
+				gs = ""
+			} else {
+				gs = TruncHeadDual(gs, avail, bavail)
+			}
+		case st.ByteLimit == 0 && SegWidth(gs) > avail:
+			if avail < 3 {
+				gs = ""
+			} else {
+				gs = TruncHead(gs, avail)
+			}
+		}
+	}
+
+	gw, gb := SegWidth(gs), ByteWidth(gs)
+	dirmax := wt - SegWidth(right) - gw - 1
+	if dirmax < 3 {
+		dirmax = 3
+	}
+	if st.ByteLimit > 0 {
+		bdirmax := st.ByteLimit - ByteWidth(right) - gb - 1
+		if bdirmax < 3 {
+			bdirmax = 3
+		}
+		if bdirmax < dirmax {
+			dirmax = bdirmax
+		}
+		left = TruncTailDual(disp, dirmax, bdirmax)
+	} else {
+		left = TruncTail(disp, dirmax)
+	}
+	left += gs
+
+	lw := SegWidth(left)
+	if sn := sessionLabel(f); sn != "" {
+		budget := wt - lw - SegWidth(right) - 3
+		if budget >= 6 {
+			if st.ByteLimit > 0 {
+				bsn := st.ByteLimit - ByteWidth(left) - ByteWidth(right) - 3
+				if bsn >= 6 {
+					right += " | " + TruncHeadDual(sn, budget, bsn)
+				}
+			} else {
+				right += " | " + TruncHead(sn, budget)
+			}
+		}
+	}
+
+	gap = wt - SegWidth(left) - SegWidth(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left, right, gap
+}
+
+// buildLine2 degrades progressively: level 0 is the richest, level 4 is model
+// only. Both budgets are enforced at every level, because a CJK account name in
+// the credits segment costs three bytes for every two columns.
+func buildLine2(f *agent.Fields, st Style, wt int, bill Billing) string {
 	for lvl := 0; lvl <= 4; lvl++ {
 		line := line2At(f, lvl, wt, bill)
-		if SegWidth(line) <= wt {
+		if SegWidth(line) <= wt && (st.ByteLimit == 0 || ByteWidth(line) <= st.ByteLimit) {
 			return line
 		}
 	}
-	return line2At(f, 4, wt, bill)
+	line := line2At(f, 4, wt, bill)
+	if st.ByteLimit > 0 && ByteWidth(line) > st.ByteLimit {
+		line = TruncHeadDual(line, wt, st.ByteLimit)
+	}
+	return line
 }
 
 func line2At(f *agent.Fields, lvl, wt int, bill Billing) string {
