@@ -23,11 +23,15 @@
 package mcpcfg
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Count returns the number of enabled servers and the number of defined ones.
@@ -70,6 +74,85 @@ func Count(kind, dir string) (enabled, total int) {
 	cache[key] = result{enabled: enabled, total: total}
 	mu.Unlock()
 	return enabled, total
+}
+
+// diskTTL is how long a persisted count is reused without touching a single
+// config file. Every status-bar frame is a separate process, so the in-memory
+// cache above never survives one. Without a disk record each frame pays five
+// config stats plus the JSONC parses — measured at ~17ms on Windows with a
+// real-time scanner — inside the host's hard 5s status-line budget, for a number
+// that changes about once a month.
+const diskTTL = 5 * time.Second
+
+// recordVersion makes a future format change detectable instead of silently
+// misreading an old record.
+const recordVersion = 1
+
+// record is the on-disk envelope.
+type record struct {
+	Version int   `json:"version"`
+	Enabled int   `json:"enabled"`
+	Total   int   `json:"total"`
+	At      int64 `json:"at"` // unix milliseconds
+}
+
+// CountCached is Count backed by a small cross-process cache in cacheDir.
+//
+// The record is keyed by agent and normalized directory only, so a config edit
+// is picked up within diskTTL. That lag is invisible on a status bar and buys
+// a frame that reads one ~120 byte file instead of stat-ing and parsing the
+// CLI's configuration. An empty cacheDir (tests) degrades to Count.
+func CountCached(cacheDir, kind, dir string) (enabled, total int) {
+	if cacheDir == "" || dir == "" {
+		return Count(kind, dir)
+	}
+	path := recordPath(cacheDir, kind, dir)
+	if r, ok := readRecord(path); ok && time.Since(time.UnixMilli(r.At)) < diskTTL {
+		return r.Enabled, r.Total
+	}
+	enabled, total = Count(kind, dir)
+	if os.Getenv("STATUSLINE_TESTING") != "1" {
+		writeRecord(path, enabled, total)
+	}
+	return enabled, total
+}
+
+// recordPath carries a hash of the directory, never the directory itself: the
+// cache directory is shared and a project path can spell a customer name.
+func recordPath(cacheDir, kind, dir string) string {
+	sum := sha256.Sum256([]byte(kind + "|" + normKey(dir)))
+	return filepath.Join(cacheDir, "mcp-"+kind+"-"+hex.EncodeToString(sum[:8])+".json")
+}
+
+func readRecord(path string) (record, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return record{}, false
+	}
+	var r record
+	if json.Unmarshal(b, &r) != nil || r.Version != recordVersion || r.At <= 0 {
+		return record{}, false
+	}
+	return r, true
+}
+
+// writeRecord is atomic (tmp + rename) and lock-free: concurrent frames write
+// the same value, so a lost race costs one recomputation and never a stale
+// count from a torn file.
+func writeRecord(path string, enabled, total int) {
+	r := record{Version: recordVersion, Enabled: enabled, Total: total, At: time.Now().UnixMilli()}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return
+	}
+	b = append(b, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
+	if os.WriteFile(tmp, b, 0o644) == nil {
+		_ = os.Rename(tmp, path)
+	}
 }
 
 type result struct{ enabled, total int }

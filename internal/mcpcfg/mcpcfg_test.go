@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, path, body string) {
@@ -139,5 +140,101 @@ func TestStripJSONC(t *testing.T) {
 	}
 	if doc["url"] != "https://example.com/mcp" {
 		t.Fatalf("url = %v", doc["url"])
+	}
+}
+
+// resetMemo simulates a fresh process: the in-memory memo never survives a
+// status-bar frame, so only the disk record can make a repeat frame cheap.
+func resetMemo() {
+	mu.Lock()
+	cache = map[string]result{}
+	mu.Unlock()
+}
+
+// TestCountCachedReusesTheRecord pins the contract the status bar relies on: a
+// repeat frame answers from the record without touching the configuration, and
+// an expired record re-reads it.
+func TestCountCachedReusesTheRecord(t *testing.T) {
+	home := homeDirFixture(t)
+	dir := filepath.Join(home, "proj")
+	cfg := filepath.Join(home, ".codebuddy", "mcp.json")
+	write(t, cfg, `{"mcpServers": {"alpha": {"command": "a"}}}`)
+	cacheDir := t.TempDir()
+
+	if enabled, total := CountCached(cacheDir, "codebuddy", dir); enabled != 1 || total != 1 {
+		t.Fatalf("enabled=%d total=%d, want 1/1", enabled, total)
+	}
+
+	// Delete the config: only the record can answer now.
+	if err := os.Remove(cfg); err != nil {
+		t.Fatal(err)
+	}
+	resetMemo()
+	if enabled, total := CountCached(cacheDir, "codebuddy", dir); enabled != 1 || total != 1 {
+		t.Fatalf("record not reused: enabled=%d total=%d, want 1/1", enabled, total)
+	}
+
+	// Expire the record: the config is gone, so the count must drop to zero.
+	path := recordPath(cacheDir, "codebuddy", dir)
+	r, ok := readRecord(path)
+	if !ok {
+		t.Fatal("record missing")
+	}
+	r.At = time.Now().Add(-2 * diskTTL).UnixMilli()
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resetMemo()
+	if enabled, total := CountCached(cacheDir, "codebuddy", dir); enabled != 0 || total != 0 {
+		t.Fatalf("expired record must re-read: enabled=%d total=%d, want 0/0", enabled, total)
+	}
+}
+
+// BenchmarkCountCachedRecordHit is the per-frame cost with --mcp: one small file
+// read instead of five stats plus the JSONC parses.
+func BenchmarkCountCachedRecordHit(b *testing.B) {
+	home := b.TempDir()
+	b.Setenv("USERPROFILE", home)
+	b.Setenv("HOME", home)
+	dir := filepath.Join(home, "proj")
+	if err := os.MkdirAll(filepath.Join(home, ".codebuddy"), 0o755); err != nil {
+		b.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".codebuddy", "mcp.json")
+	if err := os.WriteFile(cfg, []byte(`{"mcpServers": {"a": {"command": "x"}}}`), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	cacheDir := b.TempDir()
+	if enabled, _ := CountCached(cacheDir, "codebuddy", dir); enabled != 1 {
+		b.Fatal("warm-up failed")
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resetMemo()
+		CountCached(cacheDir, "codebuddy", dir)
+	}
+}
+
+// BenchmarkCountCold is the path the status bar used before the record existed.
+func BenchmarkCountCold(b *testing.B) {
+	home := b.TempDir()
+	b.Setenv("USERPROFILE", home)
+	b.Setenv("HOME", home)
+	dir := filepath.Join(home, "proj")
+	if err := os.MkdirAll(filepath.Join(home, ".codebuddy"), 0o755); err != nil {
+		b.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".codebuddy", "mcp.json")
+	if err := os.WriteFile(cfg, []byte(`{"mcpServers": {"a": {"command": "x"}}}`), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resetMemo()
+		Count("codebuddy", dir)
 	}
 }
