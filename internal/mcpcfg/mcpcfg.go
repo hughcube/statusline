@@ -96,6 +96,8 @@ type record struct {
 	At      int64 `json:"at"` // unix milliseconds
 }
 
+const cacheSubdir = "mcp"
+
 // CountCached is Count backed by a small cross-process cache in cacheDir.
 //
 // The record is keyed by agent and normalized directory only, so a config edit
@@ -107,7 +109,14 @@ func CountCached(cacheDir, kind, dir string) (enabled, total int) {
 		return Count(kind, dir)
 	}
 	path := recordPath(cacheDir, kind, dir)
-	if r, ok := readRecord(path); ok && time.Since(time.UnixMilli(r.At)) < diskTTL {
+	r, ok := readRecord(path)
+	if !ok {
+		legacy := legacyRecordPath(cacheDir, kind, dir)
+		if migrateRecord(legacy, path) {
+			r, ok = readRecord(path)
+		}
+	}
+	if ok && time.Since(time.UnixMilli(r.At)) < diskTTL {
 		return r.Enabled, r.Total
 	}
 	enabled, total = Count(kind, dir)
@@ -117,11 +126,29 @@ func CountCached(cacheDir, kind, dir string) (enabled, total int) {
 	return enabled, total
 }
 
+func recordFileName(kind, dir string) string {
+	sum := sha256.Sum256([]byte(kind + "|" + normKey(dir)))
+	return "mcp-" + kind + "-" + hex.EncodeToString(sum[:8]) + ".json"
+}
+
 // recordPath carries a hash of the directory, never the directory itself: the
 // cache directory is shared and a project path can spell a customer name.
 func recordPath(cacheDir, kind, dir string) string {
-	sum := sha256.Sum256([]byte(kind + "|" + normKey(dir)))
-	return filepath.Join(cacheDir, "mcp-"+kind+"-"+hex.EncodeToString(sum[:8])+".json")
+	return filepath.Join(cacheDir, cacheSubdir, recordFileName(kind, dir))
+}
+
+func legacyRecordPath(cacheDir, kind, dir string) string {
+	return filepath.Join(cacheDir, recordFileName(kind, dir))
+}
+
+func migrateRecord(legacy, current string) bool {
+	if _, err := os.Stat(legacy); err != nil {
+		return false
+	}
+	if err := os.MkdirAll(filepath.Dir(current), 0o755); err != nil {
+		return false
+	}
+	return os.Rename(legacy, current) == nil
 }
 
 func readRecord(path string) (record, bool) {

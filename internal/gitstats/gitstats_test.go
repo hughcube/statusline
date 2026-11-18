@@ -151,3 +151,62 @@ func TestLoadBranchSwitchInvalidatesStaleCache(t *testing.T) {
 		t.Fatalf("switched branch dirty = %d, want 0 until refreshed", st.Dirty)
 	}
 }
+
+func TestCachePathInSubdirectory(t *testing.T) {
+	cacheDir := t.TempDir()
+	path := CachePath(cacheDir, "C:/my/repo")
+	rel, err := filepath.Rel(cacheDir, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(rel)
+	if dir != "git" {
+		t.Fatalf("expected CachePath to be in 'git' subdir, got %q (rel=%q)", dir, rel)
+	}
+}
+
+func TestLoadMigratesLegacyFlatCache(t *testing.T) {
+	t.Setenv("STATUSLINE_TESTING", "1")
+	cacheDir := t.TempDir()
+	repoDir := t.TempDir()
+	gitDir := filepath.Join(repoDir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write cache in legacy location (flat in cacheDir)
+	legacyPath := legacyCachePath(cacheDir, repoDir)
+	writeCache(legacyPath, Stats{Branch: "main", Dirty: 3, Ahead: 1, Behind: 2, Add: 15, Del: 4})
+
+	// Also create a legacy lock dir
+	legacyLock := legacyPath + ".lock"
+	if err := os.MkdirAll(legacyLock, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath := CachePath(cacheDir, repoDir)
+	if _, err := os.Stat(newPath); err == nil {
+		t.Fatal("new cache file already exists before migration")
+	}
+
+	st := Load(cacheDir, repoDir, repoDir, false)
+	if st.Branch != "main" || st.Dirty != 3 || st.Ahead != 1 || st.Behind != 2 || st.Add != 15 || st.Del != 4 {
+		t.Fatalf("Load with legacy cache returned %+v", st)
+	}
+
+	// Legacy file and lock must be gone
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy cache file still exists at %q", legacyPath)
+	}
+	if _, err := os.Stat(legacyLock); !os.IsNotExist(err) {
+		t.Fatalf("legacy lock still exists at %q", legacyLock)
+	}
+
+	// New cache file must exist in git/ subdir
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("new cache file not created at %q: %v", newPath, err)
+	}
+}

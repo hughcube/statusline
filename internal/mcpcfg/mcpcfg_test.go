@@ -238,3 +238,53 @@ func BenchmarkCountCold(b *testing.B) {
 		Count("codebuddy", dir)
 	}
 }
+
+func TestRecordPathInSubdirectory(t *testing.T) {
+	cacheDir := t.TempDir()
+	path := recordPath(cacheDir, "codebuddy", "C:/proj")
+	rel, err := filepath.Rel(cacheDir, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(rel)
+	if dir != "mcp" {
+		t.Fatalf("expected recordPath to be in 'mcp' subdir, got %q (rel=%q)", dir, rel)
+	}
+}
+
+func TestCountCachedMigratesLegacyRecord(t *testing.T) {
+	home := homeDirFixture(t)
+	dir := filepath.Join(home, "proj")
+	cacheDir := t.TempDir()
+
+	// Write legacy record in root of cacheDir
+	legacy := legacyRecordPath(cacheDir, "codebuddy", dir)
+	r := record{Version: recordVersion, Enabled: 2, Total: 3, At: time.Now().UnixMilli()}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	newPath := recordPath(cacheDir, "codebuddy", dir)
+	if _, err := os.Stat(newPath); err == nil {
+		t.Fatal("new record file already exists before migration")
+	}
+
+	enabled, total := CountCached(cacheDir, "codebuddy", dir)
+	if enabled != 2 || total != 3 {
+		t.Fatalf("expected migrated record 2/3, got %d/%d", enabled, total)
+	}
+
+	// Legacy file should be gone
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy record file still exists at %q", legacy)
+	}
+
+	// New file in mcp/ should exist
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("new record file not found at %q: %v", newPath, err)
+	}
+}

@@ -78,14 +78,37 @@ func Locate(dir string) (root, native string) {
 	}
 }
 
-func CachePath(cacheDir, root string) string {
-	key := strings.Map(func(r rune) rune {
+const cacheSubdir = "git"
+
+func cacheKey(root string) string {
+	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
 			return r
 		}
 		return '_'
 	}, root)
-	return filepath.Join(cacheDir, key+".git.cache")
+}
+
+func CachePath(cacheDir, root string) string {
+	return filepath.Join(cacheDir, cacheSubdir, cacheKey(root)+".git.cache")
+}
+
+func legacyCachePath(cacheDir, root string) string {
+	return filepath.Join(cacheDir, cacheKey(root)+".git.cache")
+}
+
+func migrateCache(legacy, current string) bool {
+	if _, err := os.Stat(legacy); err != nil {
+		return false
+	}
+	if err := os.MkdirAll(filepath.Dir(current), 0o755); err != nil {
+		return false
+	}
+	if err := os.Rename(legacy, current); err != nil {
+		return false
+	}
+	_ = os.RemoveAll(legacy + ".lock")
+	return true
 }
 
 // Load returns cached stats and schedules a refresh when the entry is stale.
@@ -96,6 +119,12 @@ func Load(cacheDir, root, native string, sync bool) Stats {
 	}
 	path := CachePath(cacheDir, root)
 	st, ts := readCache(path)
+	if ts.IsZero() {
+		legacy := legacyCachePath(cacheDir, root)
+		if migrateCache(legacy, path) {
+			st, ts = readCache(path)
+		}
+	}
 
 	head := readHead(native)
 	// If HEAD has changed (e.g. user ran git checkout), discard the stale
