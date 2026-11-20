@@ -47,7 +47,7 @@ payload 通过 stdin 喂进来的新 Agent 上。
 | Agent | 状态栏 | 终端标题 | 说明 |
 | :--- | :---: | :---: | :--- |
 | CodeBuddy / WorkBuddy | 是 | — | 窗口占用取 `used_percentage`，按字节预算裁切 |
-| Google Antigravity | 是 | 是 | 配额组 `P` / `G` / `G4`，状态图标带动效 |
+| Google Antigravity | 是 | 是 | 配额组 `P` / `G` / `Argon`，状态图标带动效 |
 | Claude Code | 是 | — | `rate_limits`（含重置时间）+ DeepSeek 余额 |
 | 其它 | 尽力而为 | — | generic 适配器 |
 

@@ -49,7 +49,7 @@ is one file plus one registry line.
 | Agent | Status bar | Terminal title | Notes |
 | :--- | :---: | :---: | :--- |
 | CodeBuddy / WorkBuddy | yes | — | window usage from `used_percentage`, byte-budget aware |
-| Google Antigravity | yes | yes | quota groups `P` / `G` / `G4`, animated state icon |
+| Google Antigravity | yes | yes | quota groups `P` / `G` / `Argon`, animated state icon |
 | Claude Code | yes | — | `rate_limits` with reset times; DeepSeek balance |
 | anything else | best effort | — | generic adapter |
 
