@@ -109,12 +109,12 @@ func ctxFor(want string) int {
 	return 1048576
 }
 
-func TestContractG4Quota(t *testing.T) {
+func TestContractArgonQuota(t *testing.T) {
 	out := renderBar(t, `{"product":"antigravity","model":{"display_name":"Gemini 3.8 Flash"},"plan_tier":"Google AI Pro","version":"1.5.2","quota":{"gemini-argon-wtu-weekly":{"remaining_fraction":0}}}`, 180)
-	assertParts(t, out, "G4·100%")
+	assertParts(t, out, "Argon·100%")
 
 	out = renderBar(t, `{"product":"antigravity","model":{"display_name":"Gemini 3.8 Flash"},"plan_tier":"Google AI Pro","version":"1.5.2","quota":{"gemini-argon-5h":{"remaining_fraction":0.8},"gemini-argon-wtu-weekly":{"remaining_fraction":0.5}}}`, 180)
-	assertParts(t, out, "G4·20%/50%")
+	assertParts(t, out, "Argon·20%/50%")
 }
 
 func TestContractCodeBuddy(t *testing.T) {
@@ -277,7 +277,7 @@ func TestContractLongEmailAndWeeklyReset(t *testing.T) {
 
 	// 宽度 130 下（完整账号 41 列放不下），账号优先向左截断为 kakuturichenn…(Pro)，5h 和周重置时间均应显示
 	out := renderBar(t, makePayload(130), 130)
-	assertParts(t, out, "kakuturi", "…(Pro)", "P·0%", "/78%", "G·4%", "/2%", "G4·1%", "Gemini 3.8 Flash 1.0M high", "v1.5.3")
+	assertParts(t, out, "kakuturi", "…(Pro)", "P·0%", "/78%", "G·4%", "/2%", "Argon·1%", "Gemini 3.8 Flash 1.0M high", "v1.5.3")
 	assertParts(t, out, "("+w7Time+")")
 
 	// 宽度 160 下（放得下全部），账号完整显示，不应带截断省略号

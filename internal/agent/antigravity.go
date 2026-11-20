@@ -148,7 +148,7 @@ func parseAntigravityQuotas(p *Payload) []Quota {
 
 	build("P", "3p-5h", "3p-weekly", "")
 	build("G", "gemini-5h", "gemini-weekly", "")
-	build("G4", "", "", "gemini-argon")
+	build("Argon", "", "", "gemini-argon")
 
 	if len(out) == 0 {
 		if rf, ok := q["remaining_fraction"].(float64); ok {

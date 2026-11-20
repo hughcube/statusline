@@ -65,8 +65,8 @@ func TestParseAntigravityQuotas(t *testing.T) {
 	if f.Quotas[1].Used5 != 36 || f.Quotas[1].Used7 != 10 {
 		t.Errorf("G 组错误: %+v", f.Quotas[1])
 	}
-	if f.Quotas[2].Label != "G4" || f.Quotas[2].Used5 != 20 || f.Quotas[2].Used7 != 50 {
-		t.Errorf("G4 组错误: %+v", f.Quotas[2])
+	if f.Quotas[2].Label != "Argon" || f.Quotas[2].Used5 != 20 || f.Quotas[2].Used7 != 50 {
+		t.Errorf("Argon 组错误: %+v", f.Quotas[2])
 	}
 }
 

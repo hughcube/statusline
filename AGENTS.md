@@ -146,6 +146,8 @@ only when `ANTHROPIC_BASE_URL` is the **official** host
 - The quota segment (`23%(18:30)/41%(08 09:00)`) is separate: it comes from the
   payload's `rate_limits`, including `resets_at`. The billing amount is inserted
   before it.
+- Antigravity quota mapping: `P` (`3p-5h`/`3p-weekly`), `G` (`gemini-5h`/`gemini-weekly`,
+  shared by Flash/Neon/Hydrogen), and `Argon` (`gemini-argon-5h`/`gemini-argon-wtu-weekly`).
 - The segment is `DeepSeek ¥10.26` at normal widths; the provider label is
   dropped first when the line gets tight, leaving `¥10.26`.
 
