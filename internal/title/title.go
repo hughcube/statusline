@@ -8,7 +8,9 @@ package title
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,11 +72,37 @@ func Render(f *agent.Fields) string {
 		sessionTitle = render.TruncHead(t, MaxTitleCols)
 	}
 
-	status := glyph(f.State, f.IsError)
+	state := f.State
+	isError := f.IsError
+
+	// Self-healing: if the host payload still reports working/running due to
+	// event-loop tick latency, inspect the transcript tail. If the final step is
+	// already DONE with no pending tool calls, heal the state to idle immediately.
+	if isWorkingState(state) {
+		if path := ResolveTranscriptPath(f); path != "" {
+			if override := TailState(path); override != "" {
+				state = override
+				if override == "error" {
+					isError = true
+				}
+			}
+		}
+	}
+
+	status := glyph(state, isError)
 	if sessionTitle != "" {
 		return fmt.Sprintf("%s %s [%s]", status, sessionTitle, project)
 	}
 	return fmt.Sprintf("%s [%s]", status, project)
+}
+
+func isWorkingState(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "working", "running", "executing", "busy", "in_progress":
+		return true
+	}
+	return false
 }
 
 // IsSessionID reports whether s is a raw machine session/conversation identifier
@@ -163,10 +191,106 @@ func FromCache(sessionID string) string {
 	return strings.TrimSpace(string(b))
 }
 
+// ResolveTranscriptPath locates the transcript.jsonl file for f.
+func ResolveTranscriptPath(f *agent.Fields) string {
+	if f == nil {
+		return ""
+	}
+	path := f.TranscriptPath
+	if path != "" {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+		// Antigravity CLI reports .gemini/antigravity instead of .gemini/antigravity-cli
+		for _, pat := range []string{filepath.Join(".gemini", "antigravity"), "/.gemini/antigravity", "\\.gemini\\antigravity"} {
+			if strings.Contains(path, pat) {
+				fixPath := strings.Replace(path, pat, pat+"-cli", 1)
+				if _, err := os.Stat(fixPath); err == nil {
+					return fixPath
+				}
+			}
+		}
+		return ""
+	}
+	if f.SessionID != "" {
+		base := os.Getenv("AI_APP_DATA_DIR")
+		if base == "" {
+			base = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli")
+		}
+		cand := filepath.Join(base, "brain", f.SessionID, ".system_generated", "logs", "transcript.jsonl")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return ""
+}
+
+type transcriptTail struct {
+	Type      string `json:"type"`
+	Status    string `json:"status"`
+	ToolCalls []any  `json:"tool_calls"`
+}
+
+// TailState inspects the end of transcript.jsonl. If the final step is a
+// completed PLANNER_RESPONSE with no pending tool calls, it returns "idle".
+// If the final step indicates an error, it returns "error".
+// Otherwise it returns "" (no override, maintaining the host payload state).
+func TailState(transcriptPath string) string {
+	if transcriptPath == "" {
+		return ""
+	}
+	f, err := os.Open(transcriptPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return ""
+	}
+
+	const bufSize = 8192
+	var readSize int64 = bufSize
+	if fi.Size() < readSize {
+		readSize = fi.Size()
+	}
+	offset := fi.Size() - readSize
+
+	buf := make([]byte, readSize)
+	if _, err := f.ReadAt(buf, offset); err != nil && err != io.EOF {
+		return ""
+	}
+
+	lines := strings.Split(strings.TrimRight(string(buf), "\r\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var entry transcriptTail
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			// Chunk boundary might slice through the first line when offset > 0
+			continue
+		}
+		if entry.Type == "PLANNER_RESPONSE" {
+			if entry.Status == "ERROR" {
+				return "error"
+			}
+			if entry.Status == "DONE" && len(entry.ToolCalls) == 0 {
+				return "idle"
+			}
+		}
+		// Found the last valid JSON entry; if it's not a terminal response, do not override
+		break
+	}
+	return ""
+}
+
 // fromTranscript scans the transcript for the first user request and records a
 // negative cache entry when nothing is found.
 func fromTranscript(f *agent.Fields) string {
-	if len(f.SessionID) < 8 || f.TranscriptPath == "" {
+	if len(f.SessionID) < 8 {
 		return ""
 	}
 	short := f.SessionID[:8]
@@ -189,26 +313,10 @@ func fromTranscript(f *agent.Fields) string {
 		}
 	}
 
-	path := f.TranscriptPath
-	if path != "" {
-		if _, err := os.Stat(path); err != nil {
-			// Antigravity CLI reports .gemini/antigravity instead of .gemini/antigravity-cli
-			for _, pat := range []string{filepath.Join(".gemini", "antigravity"), "/.gemini/antigravity", "\\.gemini\\antigravity"} {
-				if strings.Contains(path, pat) {
-					fixPath := strings.Replace(path, pat, pat+"-cli", 1)
-					if _, err := os.Stat(fixPath); err == nil {
-						path = fixPath
-						break
-					}
-				}
-			}
-		}
-	} else {
-		base := os.Getenv("AI_APP_DATA_DIR")
-		if base == "" {
-			base = filepath.Join(render.HomeDir(), ".gemini", "antigravity-cli")
-		}
-		path = filepath.Join(base, "brain", f.SessionID, ".system_generated", "logs", "transcript.jsonl")
+	path := ResolveTranscriptPath(f)
+	if path == "" {
+		recordNeg()
+		return ""
 	}
 
 	title := scanTranscript(path)

@@ -184,13 +184,111 @@ func TestIsSessionIDAndUUID(t *testing.T) {
 
 func BenchmarkRender(b *testing.B) {
 	f := &agent.Fields{
-		Session:   "AGY Session Name Display Issue",
-		SessionID: "4a7b9866-acb4-4294-99c0-8cbc886cfaa8",
-		Dir:       "C:/Users/hugh.li/Data/ms/statusline",
+		Session:   "Fixed Title",
+		Dir:       "C:/fixture/project",
 		State:     "idle",
+		SessionID: "12345678",
 	}
-	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Render(f)
+		Render(f)
+	}
+}
+
+func TestTailState(t *testing.T) {
+	dir := t.TempDir()
+
+	// 1. Terminal response: DONE, no tool calls -> idle
+	p1 := filepath.Join(dir, "done_no_tools.jsonl")
+	os.WriteFile(p1, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"hello\"}\n"+
+			"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[]}\n",
+	), 0o644)
+	if got := TailState(p1); got != "idle" {
+		t.Errorf("TailState(done_no_tools) = %q, want \"idle\"", got)
+	}
+
+	// 2. Active tools: DONE, with tool calls -> "" (still working)
+	p2 := filepath.Join(dir, "done_with_tools.jsonl")
+	os.WriteFile(p2, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"run command\"}\n"+
+			"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[{\"name\":\"run\"}]}\n",
+	), 0o644)
+	if got := TailState(p2); got != "" {
+		t.Errorf("TailState(done_with_tools) = %q, want \"\"", got)
+	}
+
+	// 3. Terminal error: ERROR -> error
+	p3 := filepath.Join(dir, "error.jsonl")
+	os.WriteFile(p3, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"fail\"}\n"+
+			"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"ERROR\"}\n",
+	), 0o644)
+	if got := TailState(p3); got != "error" {
+		t.Errorf("TailState(error) = %q, want \"error\"", got)
+	}
+
+	// 4. User input just entered -> ""
+	p4 := filepath.Join(dir, "user_input.jsonl")
+	os.WriteFile(p4, []byte(
+		"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[]}\n"+
+			"{\"type\":\"USER_INPUT\",\"content\":\"next question\"}\n",
+	), 0o644)
+	if got := TailState(p4); got != "" {
+		t.Errorf("TailState(user_input) = %q, want \"\"", got)
+	}
+
+	// 5. Empty or non-existent file -> ""
+	if got := TailState(""); got != "" {
+		t.Errorf("TailState(\"\") = %q, want \"\"", got)
+	}
+	p5 := filepath.Join(dir, "empty.jsonl")
+	os.WriteFile(p5, []byte(""), 0o644)
+	if got := TailState(p5); got != "" {
+		t.Errorf("TailState(empty) = %q, want \"\"", got)
+	}
+
+	// 6. Large file (>8KB) with boundary padding
+	p6 := filepath.Join(dir, "large.jsonl")
+	padding := strings.Repeat("{\"type\":\"GENERIC\",\"content\":\"filler line long enough to pad chunk buffer\"}\n", 200)
+	finalLine := "{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\"}\n"
+	os.WriteFile(p6, []byte(padding+finalLine), 0o644)
+	if got := TailState(p6); got != "idle" {
+		t.Errorf("TailState(large) = %q, want \"idle\"", got)
+	}
+}
+
+func TestRenderSelfHealsWorkingToIdle(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("AI_CACHE_HOME", cacheDir)
+
+	transcriptDir := t.TempDir()
+	p := filepath.Join(transcriptDir, "transcript.jsonl")
+	os.WriteFile(p, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"<USER_REQUEST>\\n测试转录本自愈\\n</USER_REQUEST>\"}\n"+
+			"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[]}\n",
+	), 0o644)
+
+	f := &agent.Fields{
+		Session:        "测试转录本自愈",
+		Dir:            "C:/fixture/project",
+		State:          "working", // Host payload says "working"
+		TranscriptPath: p,
+	}
+
+	// Because the transcript tail is DONE with no tool calls, it should self-heal to ❇️ (idle)
+	got := Render(f)
+	want := "❇️ 测试转录本自愈 [project]"
+	if got != want {
+		t.Fatalf("Render self-healing got %q, want %q", got, want)
+	}
+
+	// If tools are pending, it should remain in working state
+	os.WriteFile(p, []byte(
+		"{\"type\":\"USER_INPUT\",\"content\":\"<USER_REQUEST>\\n测试转录本自愈\\n</USER_REQUEST>\"}\n"+
+			"{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"tool_calls\":[{\"name\":\"bash\"}]}\n",
+	), 0o644)
+	gotWorking := Render(f)
+	if strings.HasPrefix(gotWorking, "❇️") {
+		t.Fatalf("Render with pending tools should NOT be idle, got %q", gotWorking)
 	}
 }
